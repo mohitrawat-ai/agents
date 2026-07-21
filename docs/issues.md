@@ -635,12 +635,23 @@ the ~45 short-lived tool connections per run; cold start accepted). Project
 created by Mohit; role strings use the pooled endpoint, owner string direct,
 all local in `.env`. SSM lands with the AWS script.
 
+**Progress 2026-07-22:** `infra/provision.sh` + `infra/RUNBOOK.md` checked
+in; SSM section live (Mohit ran it; 11 params verified by name). Region
+ruled **ap-south-1**; account `537124933640`, profile `ingren`; script
+hard-gates on the account id. Partner access corrected to the cross-account
+role `ingren-rca-readonly` (AssumeRole + ExternalId) — no static partner
+keys anywhere; #9 wires `credential_source = EcsContainer` so `aws_log`'s
+`--profile hb-role` default works unchanged. Invocation goes through
+`uv run --env-file` (bash `source` disagreed with the `.env` format).
+
 ### Acceptance criteria
 
 - [ ] Script checked in; every AWS resource the slices use is created by it
 - [ ] Re-running against an existing stack is safe
 - [ ] One-time manual steps (account signup, Slack app config) are written down next to it
-- [x] Postgres reachable (Neon, 2026-07-21); connection string in SSM pending
+- [x] Postgres reachable (Neon, 2026-07-21); all secrets in SSM 2026-07-22 —
+      11 SecureStrings under `/rca/` (3 role DSNs, NR, Anthropic, Slack bot
+      token, partner role-arn + external-id, Langfuse keys)
 - [ ] No resource exists that the script or its runbook lines don't record
 
 ### Blocked by
