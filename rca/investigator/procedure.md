@@ -117,9 +117,11 @@ Then emit the `self_check` event with counts.
    - Notes:
    ```
 
-2. Append to the relevant NOTES file anything you learned **about the
+2. Emit an `instrument_note` event for anything you learned **about the
    instruments** — a filter key that worked, a dead end, a unit surprise.
-   Respect each file's append bar: only entries that are true regardless of
+   One event per learning:
+   `{"instrument": "newrelic|cloudwatch", "note": "<one line>"}`.
+   Same bar as the NOTES files: only entries that are true regardless of
    which incident happens next. Never incident conclusions, never
    investigation strategy.
 3. Emit `doc_ready` with the verdict line. Then stop.

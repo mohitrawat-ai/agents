@@ -15,8 +15,11 @@ four tool scripts denies those by construction. Shell operators, command
 substitution, and env-prefixed invocations (`INCIDENT_ID=other python3 …`,
 P9 §5's residual) all fail the same parse. Read/Glob/Grep are confined to
 the workdir and tools dir after resolve() (symlinks can't escape); Write
-and Edit are confined to the workdir plus the two NOTES files — writable
-tool scripts would make the executable allowlist worthless.
+and Edit are confined to the workdir — writable tool scripts would make
+the executable allowlist worthless. The two NOTES files left the Write
+allowlist 2026-07-22 (§8d, issue #16): learnings go to the record as
+instrument_note events, and a file write that vanishes with the container
+is a false affordance.
 """
 
 import asyncio
@@ -108,10 +111,6 @@ def make_pre_tool_use_hook(run_dir: Path, workdir: Path, tools_dir: Path):
     }
     read_roots = [workdir.resolve(), tools_dir]
     write_roots = [workdir.resolve()]
-    notes_files = {
-        tools_dir / "newrelic" / "NR_NOTES.md",
-        tools_dir / "cloudwatch" / "CW_NOTES.md",
-    }
     cwd = run_dir.resolve()
 
     def _deny(reason: str) -> dict:
@@ -137,7 +136,7 @@ def make_pre_tool_use_hook(run_dir: Path, workdir: Path, tools_dir: Path):
                 if reason is None and (pattern.startswith("/") or ".." in pattern):
                     reason = "glob patterns may not leave the allowed directories"
             elif tool in ("Write", "Edit"):
-                reason = check_path(ti.get("file_path"), write_roots, cwd, notes_files)
+                reason = check_path(ti.get("file_path"), write_roots, cwd, set())
             else:
                 reason = f"tool '{tool}' is not allowed"
         except Exception as exc:  # noqa: BLE001 — a boundary that raises fails closed

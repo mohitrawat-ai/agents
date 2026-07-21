@@ -127,23 +127,27 @@ def test_symlink_cannot_escape(dirs, tmp_path):
     assert check_path("link.txt", [workdir], run_dir, set()) is not None
 
 
-def test_write_confined_to_workdir_plus_notes(dirs):
+def test_write_confined_to_workdir(dirs):
     workdir, run_dir = dirs
-    notes = {
-        (TOOLS / "newrelic" / "NR_NOTES.md").resolve(),
-        (TOOLS / "cloudwatch" / "CW_NOTES.md").resolve(),
-    }
-    assert check_path("rca.md", [workdir], run_dir, notes) is None
-    assert check_path("../feedback.md", [workdir], run_dir, notes) is None
-    assert (
-        check_path(str(TOOLS / "newrelic" / "NR_NOTES.md"), [workdir], run_dir, notes)
-        is None
-    )
+    assert check_path("rca.md", [workdir], run_dir, set()) is None
+    assert check_path("../feedback.md", [workdir], run_dir, set()) is None
     # a writable tool script would make the executable allowlist worthless
     assert (
-        check_path(str(TOOLS / "newrelic" / "nrql_log.py"), [workdir], run_dir, notes)
+        check_path(str(TOOLS / "newrelic" / "nrql_log.py"), [workdir], run_dir, set())
         is not None
     )
+
+
+def test_notes_files_are_not_writable(dirs):
+    """§8d (issue #16): learnings go to the record as instrument_note events.
+    A NOTES write would vanish with the container — deny it as the false
+    affordance it is. The files stay readable (Setup step 2)."""
+    workdir, run_dir = dirs
+    for f in (
+        TOOLS / "newrelic" / "NR_NOTES.md",
+        TOOLS / "cloudwatch" / "CW_NOTES.md",
+    ):
+        assert check_path(str(f), [workdir], run_dir, set()) is not None, f
 
 
 # --- check_read_only: the last wall before the partner's AWS account --------

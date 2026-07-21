@@ -134,14 +134,16 @@ system produces confident wrong answers.
    tools stay Python and stay where they are. It is the highest-value proven
    artifact in the system.
 
-   Four ruled edits apply, all in Slice 1, none after: §8a-E's deleted
-   topology-probe passage (`:51-52`); §8c's repoint of the self-check line
-   (`:104-105`) from `queries.jsonl` to `read_record.py` — the file it names
-   stops existing when the tools' sink moves to Postgres; and two micro-edits
-   ruled 2026-07-21 during Slice 1 itself (§8c, last bullet) — `:37`'s "this
-   folder's `queries.jsonl`" becomes "the incident record", `:64`'s
-   "`events.jsonl`" becomes "the emitted events". All ruled on their own
-   merits, not port artifacts.
+   Five ruled edits apply: §8a-E's deleted topology-probe passage
+   (`:51-52`); §8c's repoint of the self-check line (`:104-105`) from
+   `queries.jsonl` to `read_record.py` — the file it names stops existing
+   when the tools' sink moves to Postgres; two micro-edits ruled 2026-07-21
+   during Slice 1 itself (§8c, last bullet) — `:37`'s "this folder's
+   `queries.jsonl`" becomes "the incident record", `:64`'s "`events.jsonl`"
+   becomes "the emitted events"; and a fifth ruled 2026-07-22 (§8d, issue
+   #16) — the close-out NOTES append becomes an `instrument_note` emit,
+   because the file append silently vanishes in a container. All ruled on
+   their own merits, not port artifacts.
 
 2. **The tools are the only path to telemetry.** `nrql_log`, `aws_log`, and
    `emit` are the sole structured writers; `procedure.md` forbids any other
@@ -221,7 +223,8 @@ It comes from the task environment, not from agent input.
 
 Monotonic `id` (the poller's cursor keys off it); `incident_id`; `attempt`;
 `ts`; `event` name; payload as `jsonb`. Milestones (`hypothesis`, `timeline_settled`,
-`self_check`, `doc_ready`, `run_failed`) are narrated; `tool_call` is not.
+`self_check`, `doc_ready`, `run_failed`) are narrated; `tool_call` and
+`instrument_note` (§8d) are not.
 
 ### `documents`
 
@@ -847,6 +850,56 @@ updated in place.
   emitted events" — rather than leaving prose that points the agent at dead
   files. Rejected: leaving them stale until a confused run named the failure.
   Invariant 1 now reads: **four** ruled edits, all in Slice 1, none after.
+  *(Superseded by §8d: a fifth edit, ruled 2026-07-22.)*
+
+### 8d. NOTES memory is capture-only — ruled 2026-07-22 (issue #16)
+
+**The finding (#16):** `procedure.md`'s close-out step appends instrument
+learnings to `NR_NOTES.md` / `CW_NOTES.md`. On the laptop that works because
+the tools dir is the repo working tree. Hosted, the tools dir is baked into
+the image and the container is destroyed at task exit — the append silently
+vanishes and every later run reads stale NOTES. The last unswept shared-disk
+assumption.
+
+**Ruled: capture-only.** The close-out step becomes an **`instrument_note`
+event**, emitted through `emit.py` like every other milestone. Rows
+accumulate in `events` under the incident and attempt that taught them.
+**Nothing reads them back at boot.** The NOTES files stay image-baked and
+read-only — still the trusted guidance Setup step 2 reads — and promotion
+from captured rows into them is a human edit and a commit. How the rows turn
+back into intelligence for future runs is deliberately not designed yet; it
+is its own process, built when the rows exist to look at.
+
+**Why this answers P5's constraint.** The NOTES are read as trusted guidance
+by every future run, so an unreviewed agent write path into them is a
+*persistence* channel for log-content prompt injection. Capture-only keeps
+the agent's write path terminating in the record, which nothing treats as
+instructions. The trust boundary — the files — is crossed only by a human
+commit.
+
+**Rejected:**
+
+- *NOTES read from Postgres at boot* — agent-writable trusted context; the
+  injection channel above, verbatim.
+- *Drop the instruction* — loses the capture when a row costs nothing. The
+  learnings are the raw material any future reuse process needs.
+- *A dedicated table* — no reader exists yet. `events` rows already carry
+  incident, attempt, and timestamp; the reuse process builds its table when
+  it exists and names the need. Cheapest layer that works. (`emit.py`
+  validates JSON shape, not event names, so this costs zero tool changes.)
+
+**Consequences:**
+
+- `procedure.md` gets its **fifth ruled edit** — close-out step 2's append
+  becomes the emit. §4 invariant 1's list is updated. This is the first edit
+  ruled outside Slice 1, and it carries its own ruling here, per #16's
+  acceptance bar.
+- `hooks.py` drops the two NOTES files from the Write/Edit allowlist.
+  Nothing legitimate writes them from inside a run any more, and an allowed
+  write that silently vanishes in a container is exactly the kind of
+  false affordance #16 exists to remove.
+- `instrument_note` joins `tool_call` on the not-narrated side of §5's
+  events table.
 
 ---
 

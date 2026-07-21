@@ -371,6 +371,8 @@ distinguishable from the first.
 - [ ] A restart caps at 2 attempts
 - [ ] Budget breach and poison alert both stop without retrying
 - [ ] Verified by `StartExecution` by hand against a seeded incident
+- [ ] The first full run also closes two riding criteria: #7's record-parity
+      check and #16's `instrument_note`-at-close-out check
 
 ### Blocked by
 
@@ -666,40 +668,38 @@ the system's only cross-run memory — the whole reason Setup step 2 reads them
 — so losing the write side means instrument knowledge stops compounding the
 day the system goes hosted.
 
-**This needs a ruling before it needs code.** Candidate shapes, with their
-costs:
+**Ruled 2026-07-22 — capture-only. See `design.md` §8d.** The close-out
+append becomes an `instrument_note` event through `emit.py`; rows accumulate
+in `events`; nothing reads them back at boot. The NOTES files stay
+image-baked and human-curated — promotion from rows to files is a commit,
+designed later as its own process. Rejected: boot-time read from Postgres
+(P5's injection-persistence channel), dropping the instruction (loses free
+capture), a dedicated table (no reader exists yet).
 
-| Option | Mechanism | Cost |
-|---|---|---|
-| Emit-for-review | agent emits a `notes_proposed` event; the row surfaces for review; accepted entries are committed to the repo and ride the next image | a new event type, and a human in the loop |
-| NOTES to Postgres | a table read at boot, agent gains a write path to it | agent-writable shared state — see the constraint below |
-| Drop the instruction | delete `procedure.md:122`'s append step until a mechanism exists | memory stops compounding, openly instead of silently; a third `procedure.md` edit |
-
-**Constraint from P5's threat model, whichever way it goes:** the NOTES are
-read as trusted guidance by every future run. An unreviewed agent write path
-into them is a *persistence* channel for log-content prompt injection — a
-poisoned line written today is instructions to every investigation after it.
-Any ruling that lets agent text reach the NOTES without review has to answer
-this.
-
-**Invariant 1 is touched.** Options 1 and 3 edit `procedure.md` (the close-out
-wording), which currently allows exactly two ruled edits, both in Slice 1. A
-third needs its own ruling recorded there, same as §8c's.
+The candidate shapes and the P5 constraint that decided between them are
+recorded in §8d; the drafting table that stood here moved into it.
 
 ### Acceptance criteria
 
-- [ ] A ruling in `design.md` (§8a or §8c style) naming the chosen shape and
-      what it rejected
-- [ ] If `procedure.md` changes, invariant 1's edit list is updated in the
-      same commit
-- [ ] After one hosted run, a NOTES learning demonstrably survives to the next
-      run's Setup read — or the append instruction demonstrably no longer
-      exists
-- [ ] `feedback.md` explicitly out of scope (per-incident by design; its
+- [x] A ruling in `design.md` naming the chosen shape and what it rejected
+      (§8d)
+- [x] `procedure.md`'s close-out append becomes the `instrument_note` emit;
+      invariant 1's edit list is updated in the same commit
+- [x] The two NOTES files leave `hooks.py`'s Write/Edit allowlist;
+      `test_notes_files_are_not_writable` proves the write is denied
+- [ ] A real run demonstrably lands an `instrument_note` row — or emits none
+      because the run genuinely learned nothing, shown by the close-out
+      completing without a NOTES write attempt — **deferred to #9's first
+      full run (ruled in-session 2026-07-22), riding alongside #7's parity
+      criterion.** The plumbing half is proven: a hand-emitted
+      `instrument_note` landed in `events` (smoke incident, attempt 99)
+- [x] `feedback.md` explicitly out of scope (per-incident by design; its
       fill-in loop is P13)
+
+**Closed 2026-07-22** bar the deferred run criterion above. This issue and
+#7 both close their last box on #9's first full run.
 
 ### Blocked by
 
-- The ruling. Implementation must land before the first containerized run
-  (#9) — that is when appends start vanishing. If the ruling edits
-  `procedure.md`, the edit lands with #4's.
+- ~~The ruling~~ — ruled 2026-07-22 (§8d). Implementation must land before
+  the first containerized run (#9) — that is when appends start vanishing.
