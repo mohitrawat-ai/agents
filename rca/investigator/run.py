@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-from hooks import make_post_tool_use_hook
+from hooks import make_post_tool_use_hook, make_pre_tool_use_hook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
@@ -88,7 +88,15 @@ async def run(
         env={**os.environ, "CLAUDE_CONFIG_DIR": config_dir},
         setting_sources=[],  # nothing leaks in from ~/.claude or project settings
         hooks={
-            "PostToolUse": [HookMatcher(matcher="*", hooks=[make_post_tool_use_hook()])]
+            "PreToolUse": [
+                HookMatcher(
+                    matcher="*",
+                    hooks=[make_pre_tool_use_hook(run_dir, run_dir.parent, TOOLS_DIR)],
+                )
+            ],
+            "PostToolUse": [
+                HookMatcher(matcher="*", hooks=[make_post_tool_use_hook()])
+            ],
         },
     )
 
