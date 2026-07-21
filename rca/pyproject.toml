@@ -1,0 +1,17 @@
+[project]
+name = "rca-agent"
+version = "0.0.1"
+description = "Headless RCA agent: Slack-triggered investigation of NR/CloudWatch alerts."
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.2.122",
+    "langfuse>=4.14.0",
+    "matplotlib>=3.11.1",
+    "slack-bolt>=1.30.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
