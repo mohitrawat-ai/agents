@@ -1347,12 +1347,22 @@ The correct grant keeps P2's intent and drops its over-reach: **the protection
 that matters is no `UPDATE` and no `DELETE`** — the record stays append-only —
 plus no read *across* incidents. Reading its own incident was never the threat.
 
-Scoping the read: preferred is Postgres row-level security keyed on an incident
-id taken from the **task environment**, not from agent input, so the agent
-cannot widen it. If RLS proves fiddly, the wrapper CLI scoping the query is
-acceptable — P5's executable allowlist means the agent cannot reach Postgres
-except through those wrappers, which is a materially stronger position than P2
-was written under.
+Scoping the read — **re-ruled 2026-07-21, flipping the preference as first
+written**: wrapper-scoped first, RLS only on a named failure. As written on
+2026-07-20 this paragraph preferred RLS with wrapper scoping as the fallback.
+The wrapper CLIs scope every read to the incident id and attempt taken from the
+**task environment**, not from agent input, and P5's executable allowlist means
+the agent cannot reach Postgres except through those wrappers — so the wrapper
+scope is enforced, not advisory, and RLS would be a second mechanism doing the
+same job. RLS is the named upgrade if a wrapper is ever found leaking scope.
+
+Residual, the same for both mechanisms: the agent's shell controls the
+environment of a child invocation (`INCIDENT_ID=other python3 <tool>.py` passes
+an executable allowlist), so env-sourced scope can be spoofed from inside Bash.
+The blast radius is a cross-incident *read* — inside P5's bounded outcome of a
+misleading `rca.md`, with no write path. Closing it would mean the hook
+rejecting env-prefixed invocations or connection-level scoping; neither is
+built on speculation.
 
 ---
 

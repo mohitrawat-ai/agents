@@ -116,7 +116,7 @@ commit is the reference implementation from then on.
 |---|---|---|---|
 | **Service — ingress** | part of the 2-task Service | Verify Slack signature, write raw envelope to `inbound`, return 200. **No other I/O.** | P3 §1, §2 |
 | **Service — router** | same tasks, consumes `inbound` | Look up `(channel, thread_ts)`. Known thread → Q&A in-process. Unknown → parse, upsert the incident, `StartExecution`. **Those two writes and nothing else.** | P3 §3, §8a-A |
-| **Service — Q&A** | same tasks, in-process | `rca.md` in the prompt, evidence via a read CLI scoped by environment, no `Bash`, no tmpdir. Post the answer. | §8a-C, P8 §7 |
+| **Service — Q&A** | same tasks, in-process | `rca.md` in the prompt, evidence via a read CLI scoped by environment, no general shell (`Bash` hook-limited to that CLI), no tmpdir. Post the answer. | §8a-C, P8 §7 |
 | **Investigation task** | one Fargate Task per run | The Claude Agent SDK box. Takes `{incident_id}`, reads `raw` from Postgres, materializes `alert.json` in its own workdir → record out. **D3's seam is at the agent boundary, not the task boundary** — the agent still sees `alert.json` in → record out. | P1, D3, §8a-A |
 | **Poller** | separate 1-task Service | Narrate milestones from the events table; post the terminal message from Step Functions; post the never-started case (§8a-A). Also posts the *"investigating…"* ack, off `run_started`. | P8, §8a-A |
 | **Canary** | CloudWatch Synthetics | `@rca ping` end-to-end every 24h (15m at go-live). | P10 |
@@ -134,9 +134,11 @@ system produces confident wrong answers.
    tools stay Python and stay where they are. It is the highest-value proven
    artifact in the system.
 
-   The one deletion that still applies is §8a-E's — the topology-probe line at
-   `:52`. That is a removal ruled on its own merits, not a port artifact, and it
-   happens once.
+   Two ruled edits apply, both in Slice 1, none after: §8a-E's deleted
+   topology-probe line at `:52`, and §8c's repoint of the self-check line
+   (`:104-105`) from `queries.jsonl` to `read_record.py` — the file it names
+   stops existing when the tools' sink moves to Postgres. Both ruled on their
+   own merits, not port artifacts.
 
 2. **The tools are the only path to telemetry.** `nrql_log`, `aws_log`, and
    `emit` are the sole structured writers; `procedure.md` forbids any other
@@ -275,7 +277,10 @@ cursor, the `event_id` constraint, and all evidence rows key off it.
 
 Migrations for the four tables and three roles. Change `nrql_log`, `aws_log`,
 and `emit` to write Postgres instead of jsonl — same CLI surface, same output,
-new sink. `procedure.md` does not change.
+new sink. **`read_record.py` is built alongside them** — the self-check reads
+evidence back through it, and Slice 5's Q&A reuses it (§8c). `procedure.md`
+gets both of its ruled edits here: §8a-E's deleted line, and the self-check
+line repointed to the read CLI.
 
 **The tools are edited in place, in `rca/tools/`** (§8a-F). The copy-into-the-
 other-tree step is gone; it existed only to keep a frozen reference in a
@@ -311,7 +316,8 @@ Includes three preconditions at once, because they all live here:
   it is what lets the poller's terminal message say more than `exit 1`.
 - **`PreToolUse` hook** denying anything but the tool invocations
   `procedure.md` names, plus `Read`/`Glob`/`Grep` confinement including
-  `/proc`. (P5 §1, §4) Three executables, per §8a-E.
+  `/proc`. (P5 §1, §4) Four executables — the three writers plus
+  `read_record.py` (§8a-E, §8c).
 - **`max_budget_usd`** (P6 §5b). **No `SessionStore`** — deferred by §8a-B.
 
 *Verify:* one real alert end-to-end, producing a record equal in content to a
@@ -358,8 +364,9 @@ router** — the *"investigating…"* ack belongs to the poller from Slice 4.
 **Q&A ships in this slice too**, since the router answers in-process: `rca.md`
 inlined in the prompt, `read_record.py` for evidence with the incident id taken
 from the subprocess environment and any `--incident` flag ignored, and a
-`PreToolUse` allowlist permitting that one executable. **No `Bash`, no `Read`,
-no tmpdir** (§8a-C).
+`PreToolUse` allowlist permitting that one executable. **No general shell —
+`Bash` stays as the vehicle, the hook denies everything but `read_record.py` —
+no `Read`, no tmpdir** (§8a-C).
 
 *Verify:* kill the router between the upsert and `StartExecution`, and again
 after it. Exactly one investigation in both cases, and none lost.
@@ -436,8 +443,8 @@ once those landed.
 
 **Not on this list, checked:** Step Functions. P1 noted `SQS → RunTask` would
 have been smaller had P7 ruled otherwise. That is no longer true — it is now
-load-bearing in three rulings (P4 §6 execution-name idempotency, P7 resume,
-P8 §5 terminal authority).
+load-bearing in three rulings (P4 §6 execution-name idempotency, §8a-B's
+restart `Retry`, P8 §5 terminal authority).
 
 #### A — ruled 2026-07-20: one queue. The router calls `StartExecution` directly.
 
@@ -602,7 +609,7 @@ does not cover `env` in the process that can speak as the bot.
 | `rca.md` | file in a tmpdir | inlined in the prompt — a few KB, and what most questions are about |
 | evidence | `queries.jsonl` in a tmpdir | `python3 read_record.py --qid q03` / `--list` |
 | incident scope | the tmpdir's contents | **the environment**, set by the Service on the subprocess it spawns |
-| tool surface | `Bash`, `Read`, `Write` | `PreToolUse` allowlist, one executable. No `Bash`. |
+| tool surface | `Bash`, `Read`, `Write` | `PreToolUse` allowlist — `Bash` may invoke only the read CLI. No `Read`, no `Write`. |
 | tmpdir | required | none |
 
 **The CLI reads its incident id from the environment and ignores any flag that
@@ -806,6 +813,30 @@ would not have been in a month.
 | **Q&A voice** | Answers should speak about the incident, not about the record's plumbing. | tuning pass |
 | **Evals (P13)** | `feedback.md` is written per incident and nothing reads it. No regression suite, so a `procedure.md` change can't be shown to help or hurt. D5 defines the promotion bar; it is unbuilt. | deferred, tracked |
 | **Tests and CI (P12)** | There are none, anywhere, and nothing is committed. Each slice above should name what proves it works. | ongoing |
+
+### 8c. Post-review rulings — 2026-07-21
+
+Four gaps the doc review surfaced, ruled the same day. Slices and issues are
+updated in place.
+
+- **Langfuse stays.** `lf_mirror.py` keeps mirroring spans as-is; Postgres is
+  canonical, Langfuse is the per-run timeline UI. Its `.env` loader still dies
+  in Slice 2 with the other three; it reads `os.environ` after that.
+- **Provisioning is a checked-in AWS CLI script** (issue #15). One script of
+  `aws` commands creates every AWS resource the slices assume. No Terraform —
+  add it only on a named failure: drift that bites, or a rebuild the script
+  cannot do.
+- **Postgres is managed outside AWS — Neon or Supabase.** Created before the
+  schema issue; the connection string lands in SSM like any other secret.
+  Account and database creation are Mohit's to run.
+- **The self-check reads through `read_record.py`.** After Slice 1 there is no
+  `queries.jsonl` for `procedure.md:104-105` to verify against, and the three
+  allowlisted tools are all writers. The read CLI §8a-C designed for Q&A is
+  built in Slice 1 instead, shared by both agents, scoped to the incident and
+  attempt from the task environment. Consequence: `procedure.md` gets a
+  **second ruled edit** — the self-check line repoints from `queries.jsonl` to
+  the read CLI. Invariant 1 now reads: two ruled edits, both in Slice 1, none
+  after.
 
 ---
 

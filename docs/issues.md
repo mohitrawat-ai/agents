@@ -5,7 +5,7 @@
 > else moved, which is the evidence that the language was never the
 > architecture.
 
-Twelve live issues covering `design.md` §6 (Slice 0–6) plus the gaps that §6
+Thirteen live issues covering `design.md` §6 (Slice 0–6) plus the gaps that §6
 assumed but never gave a home. **Not yet published.** Numbers below are local;
 they become real identifiers on publish, and "Blocked by" rewrites to match.
 Struck issues keep their numbers so the blocking graph still reads.
@@ -69,10 +69,13 @@ Two deltas from `decision.md`, both ruled in §8a:
   functions of `raw` and backfill when extraction works.
 
 `rca_agent`'s read is scoped to its own incident **and its current attempt**.
-Scope comes from the task environment, never from agent input — RLS preferred,
-wrapper-scoped acceptable (P9 §5).
+Scope comes from the task environment, never from agent input — **wrapper-scoped
+(re-ruled 2026-07-21, flipping P9 §5's original preference); RLS only if a
+wrapper is ever found leaking scope**. The scoping itself is therefore proven in
+#4, where the wrappers are built, not here.
 
-Migrations are **Mohit's to run.** Hand over the exact command.
+Postgres itself is **Neon or Supabase** (§8c), created in #15 before this
+issue. Migrations are **Mohit's to run.** Hand over the exact command.
 
 ### Acceptance criteria
 
@@ -81,13 +84,13 @@ Migrations are **Mohit's to run.** Hand over the exact command.
 - [ ] `queries` and `events` carry `attempt`
 - [ ] No `dedup_key`, no `condition_guess`
 - [ ] `rca_agent` has no `UPDATE` and no `DELETE` — **proven by a failing statement, not by reading the grant**
-- [ ] `rca_agent` cannot read another incident's rows, proven the same way
 - [ ] `rca_poller` can `SELECT` `incidents` (it needs `channel`/`thread_ts`) and `UPDATE` only `narrated_through`
 - [ ] Migration command handed over, not executed
 
 ### Blocked by
 
 - #1
+- #15 (a reachable Postgres)
 
 ---
 
@@ -134,13 +137,21 @@ for documents as well as telemetry.
 Failed and dead-end queries are logged too. NR events expire at ~8 days, so
 this is the only durable copy of what the investigation saw.
 
+**`read_record.py` is built here too (§8c).** After this issue there is no
+`queries.jsonl` for the self-check pass to verify against, so it reads evidence
+back through this CLI — and #12's Q&A reuses the same one. This adds the second
+ruled `procedure.md` edit: `:104-105` repoints from `queries.jsonl` to the read
+CLI.
+
 ### Acceptance criteria
 
 - [ ] All three tools write rows; no jsonl is produced
-- [ ] `procedure.md` differs from #1's commit by exactly the deleted probe line
+- [ ] `procedure.md` differs from #1's commit by exactly the two ruled edits (§8c): the deleted probe line and the self-check repoint
+- [ ] `read_record.py` serves `--list` and `--qid`
 - [ ] Both topology probe scripts are deleted
 - [ ] qids come from `INSERT … RETURNING`; no `flock` remains
 - [ ] Failed and errored queries produce rows
+- [ ] Reads are scoped to the incident and attempt from the task environment; a flag aiming at another incident is ignored (moved from #2 — scoping is wrapper-level per the 2026-07-21 re-ruling of P9 §5)
 - [ ] **Verify:** run the investigator against a real alert with the tools pointed at Postgres. The record is identical in content to a jsonl run — diff it against #1's commit.
 
 ### Blocked by
@@ -259,8 +270,9 @@ is one bad command away from mutating their production monitoring.
 
 Allowlist the **executable**, not the command string. Command-string filtering
 is bypassable by `eval`, base64, `python3 -c`, `curl`, and variable indirection;
-allowlisting the executable denies precisely those escape hatches. Three
-invocations are permitted (§8a-E) and everything else is denied.
+allowlisting the executable denies precisely those escape hatches. Four
+invocations are permitted — the three writers plus `read_record.py`
+(§8a-E, §8c) — and everything else is denied.
 
 `Read`/`Glob`/`Grep` confined to the run directory and the tools directory —
 including `/proc`, since environment variables are readable via
@@ -276,7 +288,7 @@ and the partner's AWS account. Test it as such.
 
 ### Acceptance criteria
 
-- [ ] The three permitted invocations succeed
+- [ ] The four permitted invocations succeed
 - [ ] `curl`, `env`, `python3 -c`, `bash -c`, and a base64-decoded command are each denied
 - [ ] `Read /proc/self/environ` is denied
 - [ ] `Read` outside the run and tools directories is denied, including the transcript directory
@@ -378,7 +390,7 @@ talking should be loudly broken when it cannot talk.
 
 ### What to build
 
-`@slack/bolt` over HTTP. **One queue** (§8a-A) — `inbound` carries raw Slack
+`slack_bolt` over HTTP. **One queue** (§8a-A) — `inbound` carries raw Slack
 envelopes, and the router calls `StartExecution` directly.
 
 **Return 200 the instant the request is durable, and not before.** Acking late
@@ -445,9 +457,10 @@ incident's record. §8a-C changed its shape substantially from `decision.md`.
 
 **No folder export.** `rca.md` goes into the prompt — it is a few KB and it is
 what most questions are about. Evidence comes from a read CLI
-(`read_record.py --qid q03` / `--list`), symmetric with the write CLIs.
+(`read_record.py --qid q03` / `--list`), symmetric with the write CLIs —
+built in #4 (§8c), reused here.
 
-**Q&A loses `Bash`**, and this is the point of the issue. Q&A runs in-process
+**Q&A loses the general shell**, and this is the point of the issue. Q&A runs in-process
 on the Service, which holds `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`,
 `ANTHROPIC_API_KEY`, and a Postgres role with `UPDATE`. Its input is incident
 data — the log content that is P5's named injection vector. It had a **worse**
@@ -472,7 +485,7 @@ so the daily spend alarm currently measures half the spend.
 - [ ] `rca.md` inlined in the prompt; no tmpdir is created
 - [ ] `read_record.py` serves `--list` and `--qid`
 - [ ] A `--incident` flag pointing at another incident is ignored, and the scope stays the environment's
-- [ ] `PreToolUse` permits only that executable; `Bash`, `Read`, and `Write` are denied
+- [ ] `Bash` stays as the vehicle; the `PreToolUse` hook denies every invocation except `read_record.py`. `Read` and `Write` are denied entirely
 - [ ] Timeout posts a message rather than hanging
 - [ ] `cost_usd` recorded per question
 - [ ] A real follow-up question in a real thread returns an answer citing a real qid
@@ -549,4 +562,37 @@ Two smaller things go with it, both named in §8a-F:
 
 ### Blocked by
 
-Nothing. Do not do it. **The build ends at #13.**
+Nothing. Do not do it. **The build ends at #13** (#15 is provisioning
+underneath the slices, not a new slice).
+
+---
+
+## 15 — Provisioning: AWS CLI script, and the managed Postgres
+
+### What to build
+
+Ruled in `design.md` §8c. A checked-in script of `aws` CLI commands that
+creates every AWS resource the slices assume: SQS queue + DLQ, the state
+machine, ECS cluster + Service + poller + task definitions, ECR, ALB, IAM
+roles, SSM parameters, the canary, alarm, and SNS. Resources land as their
+issues need them — the script grows with the build, it does not have to be
+complete before #2.
+
+Postgres is **Neon or Supabase** (§8c), created before #2; the connection
+string goes into SSM like any other secret. Account and database creation are
+**Mohit's to run** — the script covers AWS only.
+
+No Terraform. The named failure that would change this: drift that bites, or a
+rebuild the script cannot do.
+
+### Acceptance criteria
+
+- [ ] Script checked in; every AWS resource the slices use is created by it
+- [ ] Re-running against an existing stack is safe
+- [ ] One-time manual steps (account signup, Slack app config) are written down next to it
+- [ ] Postgres reachable; connection string in SSM
+- [ ] No resource exists that the script or its runbook lines don't record
+
+### Blocked by
+
+- #1. Blocks #2 (the database), and #9/#11/#13 as their AWS resources come up.
