@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-
 from hooks import make_post_tool_use_hook
 
 RCA_ROOT = Path(__file__).resolve().parents[1]  # prod/agents/rca
@@ -85,17 +84,23 @@ async def run(run_dir: Path, alert_text: str, max_turns: int, model: str):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run one headless RCA investigation.")
-    ap.add_argument("--incident-dir", required=True,
-                    help="incident root folder; must contain alert.json")
-    ap.add_argument("--variant", default="baseline",
-                    help="run subfolder name (D5: variant runs are siblings sharing alert.json)")
+    ap.add_argument(
+        "--incident-dir",
+        required=True,
+        help="incident root folder; must contain alert.json",
+    )
+    # D5: variant runs are siblings sharing alert.json
+    ap.add_argument("--variant", default="baseline", help="run subfolder name")
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--max-minutes", type=int, default=60)
     # implementation-phase default; switch to claude-opus-4-8 when the daemon goes live
     ap.add_argument("--model", default="claude-sonnet-5")
-    ap.add_argument("--mock", action="store_true",
-                    help="no LLM: write stub outputs through the same folder "
-                         "contract, for daemon/plumbing tests")
+    ap.add_argument(
+        "--mock",
+        action="store_true",
+        help="no LLM: write stub outputs through the same folder "
+        "contract, for daemon/plumbing tests",
+    )
     args = ap.parse_args()
 
     incident_dir = Path(args.incident_dir).resolve()
@@ -108,13 +113,23 @@ def main() -> int:
 
     load_env_into_os(RCA_ROOT / ".env")
     events_path = run_dir / "events.jsonl"
-    emit(events_path, "run_started", model=("mock" if args.mock else args.model),
-         max_turns=args.max_turns, max_minutes=args.max_minutes)
+    emit(
+        events_path,
+        "run_started",
+        model=("mock" if args.mock else args.model),
+        max_turns=args.max_turns,
+        max_minutes=args.max_minutes,
+    )
 
     if args.mock:
         time.sleep(3)  # let the watcher thread be observably async
-        emit(events_path, "hypothesis", status="formed",
-             claim="MOCK: plumbing test, no investigation performed", qids=[])
+        emit(
+            events_path,
+            "hypothesis",
+            status="formed",
+            claim="MOCK: plumbing test, no investigation performed",
+            qids=[],
+        )
         (run_dir / "rca.md").write_text(
             "# MOCK RUN — plumbing test\n\n**Verdict:** No investigation "
             "was performed; this run verifies the daemon → investigator → "
@@ -134,13 +149,21 @@ def main() -> int:
             )
         )
     except TimeoutError:
-        emit(events_path, "run_failed", reason=f"wall-clock cap {args.max_minutes}min hit",
-             elapsed_s=round(time.time() - t0))
+        emit(
+            events_path,
+            "run_failed",
+            reason=f"wall-clock cap {args.max_minutes}min hit",
+            elapsed_s=round(time.time() - t0),
+        )
         print(f"run_failed: wall-clock cap {args.max_minutes}min", file=sys.stderr)
         return 1
     except Exception as e:  # noqa: BLE001 — any crash must land in events.jsonl (D8: loud, never silent)
-        emit(events_path, "run_failed", reason=repr(e)[:500],
-             elapsed_s=round(time.time() - t0))
+        emit(
+            events_path,
+            "run_failed",
+            reason=repr(e)[:500],
+            elapsed_s=round(time.time() - t0),
+        )
         print(f"run_failed: {e}", file=sys.stderr)
         return 1
 
@@ -150,14 +173,23 @@ def main() -> int:
     is_error = getattr(result, "is_error", result is None)
 
     if is_error:
-        emit(events_path, "run_failed", reason="agent loop ended in error",
-             elapsed_s=elapsed, turns=turns, cost_usd=cost)
+        emit(
+            events_path,
+            "run_failed",
+            reason="agent loop ended in error",
+            elapsed_s=elapsed,
+            turns=turns,
+            cost_usd=cost,
+        )
         print(f"run_failed after {elapsed}s, {turns} turns", file=sys.stderr)
         return 1
 
     emit(events_path, "run_finished", elapsed_s=elapsed, turns=turns, cost_usd=cost)
-    print(f"run_finished: {elapsed}s, {turns} turns, ${cost:.4f}" if cost is not None
-          else f"run_finished: {elapsed}s, {turns} turns")
+    print(
+        f"run_finished: {elapsed}s, {turns} turns, ${cost:.4f}"
+        if cost is not None
+        else f"run_finished: {elapsed}s, {turns} turns"
+    )
     return 0
 
 

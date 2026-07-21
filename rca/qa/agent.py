@@ -21,7 +21,7 @@ from pathlib import Path
 from claude_agent_sdk import ClaudeAgentOptions, query
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "investigator"))
-from run import load_env_into_os  # noqa: E402 — same .env loader as the investigator
+from run import load_env_into_os
 
 RCA_ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,7 +53,8 @@ async def answer(run_dir: Path, question: str, chart_dir: Path | None) -> str:
     chart_note = (
         f"\nIf a chart helps: save it as {chart_dir / 'chart.png'} using "
         f"this interpreter (it has matplotlib): {sys.executable}"
-        if chart_dir else "\nDo not produce a chart (no chart dir available)."
+        if chart_dir
+        else "\nDo not produce a chart (no chart dir available)."
     )
     options = ClaudeAgentOptions(
         system_prompt=SYSTEM_PROMPT,
@@ -75,8 +76,11 @@ def main() -> int:
     ap.add_argument("--incident-dir", required=True)
     ap.add_argument("--variant", default="baseline")
     ap.add_argument("--question", required=True)
-    ap.add_argument("--chart-dir", default=None,
-                    help="writable dir OUTSIDE the record for an optional chart.png")
+    ap.add_argument(
+        "--chart-dir",
+        default=None,
+        help="writable dir OUTSIDE the record for an optional chart.png",
+    )
     args = ap.parse_args()
 
     run_dir = Path(args.incident_dir).resolve() / args.variant

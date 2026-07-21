@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lf_mirror import mirror_query  # noqa: E402
+from lf_mirror import mirror_query
 
 ALLOWED_PREFIXES = ("describe-", "get-", "list-", "filter-", "lookup-")
 ALLOWED_EXACT = {"start-query", "stop-query", "tail"}
@@ -68,16 +68,23 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run one read-only aws CLI command, log it to queries.jsonl."
     )
-    ap.add_argument("--log-dir", required=True, help="incident variant dir (holds queries.jsonl)")
+    ap.add_argument(
+        "--log-dir", required=True, help="incident variant dir (holds queries.jsonl)"
+    )
     ap.add_argument("--purpose", required=True, help="why this command is being run")
-    ap.add_argument("aws_args", nargs=argparse.REMAINDER,
-                    help="the aws command, without the leading 'aws'")
+    ap.add_argument(
+        "aws_args",
+        nargs=argparse.REMAINDER,
+        help="the aws command, without the leading 'aws'",
+    )
     args = ap.parse_args(argv)
 
     aws_args = [a for a in args.aws_args if a != "--"]
     if not aws_args:
-        print("usage: aws_log.py --log-dir D --purpose '...' <service> <action> [...]",
-              file=sys.stderr)
+        print(
+            "usage: aws_log.py --log-dir D --purpose '...' <service> <action> [...]",
+            file=sys.stderr,
+        )
         return 2
 
     refusal = check_read_only(aws_args)

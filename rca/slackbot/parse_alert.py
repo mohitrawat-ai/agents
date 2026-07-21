@@ -12,8 +12,8 @@ from datetime import UTC, datetime
 
 # common shapes: CloudWatch alarm names, NR condition titles — best-effort only
 _CONDITION_PATTERNS = [
-    re.compile(r'"([^"]+)"'),                       # quoted alarm/condition name
-    re.compile(r"alarm[:\s]+([\w\-.]+)", re.I),     # 'ALARM: name' / 'alarm name'
+    re.compile(r'"([^"]+)"'),  # quoted alarm/condition name
+    re.compile(r"alarm[:\s]+([\w\-.]+)", re.I),  # 'ALARM: name' / 'alarm name'
     re.compile(r"^\*?([\w\-.]{8,})\*?\s*$", re.M),  # a lone bold-ish token line
 ]
 

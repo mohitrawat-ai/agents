@@ -32,7 +32,8 @@ def run_nrql(nrql: str, env: dict[str, str]) -> tuple[int, dict, float]:
     elapsed seconds). Read-only."""
     region = env["NEW_RELIC_REGION"].upper()
     endpoint = (
-        "https://api.eu.newrelic.com/graphql" if region == "EU"
+        "https://api.eu.newrelic.com/graphql"
+        if region == "EU"
         else "https://api.newrelic.com/graphql"
     )
     body = {

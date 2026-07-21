@@ -28,7 +28,8 @@ def _compact(tool_name: str, tool_input: dict) -> dict:
 def make_post_tool_use_hook(events_path: Path):
     """Return a PostToolUse hook bound to one incident's events.jsonl."""
 
-    async def post_tool_use(input_data: dict, tool_use_id, context) -> dict:
+    # _tool_use_id / _context: required by the SDK's hook signature, unused here.
+    async def post_tool_use(input_data: dict, _tool_use_id, _context) -> dict:
         tool = input_data.get("tool_name", "?")
         entry = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),

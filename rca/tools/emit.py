@@ -12,7 +12,7 @@ Usage:
 
 Example:
     python3 tools/emit.py --dir . hypothesis \
-        '{"status": "formed", "claim": "5XXs originate at the ALB, not the app", "qids": ["q03"]}'
+        '{"status": "formed", "claim": "5XXs are ALB-side", "qids": ["q03"]}'
 """
 
 import argparse
@@ -28,9 +28,12 @@ from lf_mirror import mirror_event
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Append one event line to events.jsonl.")
     ap.add_argument("--dir", default=".", help="run dir (holds events.jsonl)")
-    ap.add_argument("event", help="event name, e.g. hypothesis / timeline_settled / doc_ready")
-    ap.add_argument("fields", nargs="?", default="{}",
-                    help="JSON object of extra fields")
+    ap.add_argument(
+        "event", help="event name, e.g. hypothesis / timeline_settled / doc_ready"
+    )
+    ap.add_argument(
+        "fields", nargs="?", default="{}", help="JSON object of extra fields"
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -38,7 +41,9 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(fields, dict):
             raise ValueError
     except (json.JSONDecodeError, ValueError):
-        print(f"fields must be one JSON object, got: {args.fields[:200]}", file=sys.stderr)
+        print(
+            f"fields must be one JSON object, got: {args.fields[:200]}", file=sys.stderr
+        )
         return 2
 
     path = Path(args.dir) / "events.jsonl"

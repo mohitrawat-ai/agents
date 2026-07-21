@@ -25,8 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lf_mirror import mirror_query  # noqa: E402
-from nr_run_nrql import DOTENV, load_env, run_nrql  # noqa: E402
+from lf_mirror import mirror_query
+from nr_run_nrql import DOTENV, load_env, run_nrql
 
 
 def append_locked(log_path: Path, entry: dict) -> str:
@@ -44,7 +44,9 @@ def append_locked(log_path: Path, entry: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run one NRQL, log it to queries.jsonl.")
-    ap.add_argument("--log-dir", required=True, help="incident variant dir (holds queries.jsonl)")
+    ap.add_argument(
+        "--log-dir", required=True, help="incident variant dir (holds queries.jsonl)"
+    )
     ap.add_argument("--purpose", required=True, help="why this query is being run")
     ap.add_argument("nrql", help="the NRQL string")
     args = ap.parse_args(argv)

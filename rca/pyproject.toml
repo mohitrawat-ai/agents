@@ -13,5 +13,30 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "ruff>=0.5",
+    "ruff>=0.15.22,<0.16",
+]
+
+# Ruleset ruled 2026-07-21. Wider than ruff's default (E4,E7,E9,F), which this
+# tree already passed clean — a gate that never fires is not a gate. The
+# evidence for going wider is in the code: six `# noqa: BLE001` / `# noqa: E402`
+# comments were written against a ruleset nobody had configured.
+#
+# ruff is pinned to a minor range. A floating major silently adds rules, and a
+# lint gate that changes its mind on its own is worse than no gate.
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort — import order
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "SIM",      # simplify
+    "C4",       # comprehensions
+    "ARG",      # unused arguments
+    "PTH",      # prefer pathlib
+    "BLE",      # blind except — makes the existing noqas load-bearing
+    "RUF",      # ruff-specific, incl. RUF100 dead-noqa detection
 ]

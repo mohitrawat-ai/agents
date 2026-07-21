@@ -21,15 +21,20 @@ from pathlib import Path
 def _format(e: dict) -> str | None:
     ev = e.get("event")
     if ev == "hypothesis":
-        verb = {"formed": "Hypothesis", "supported": "Supported",
-                "killed": "Ruled out"}.get(e.get("status"), "Hypothesis")
+        verb = {
+            "formed": "Hypothesis",
+            "supported": "Supported",
+            "killed": "Ruled out",
+        }.get(e.get("status"), "Hypothesis")
         qids = f" ({', '.join(e['qids'])})" if e.get("qids") else ""
         return f"{verb}: {e.get('claim', '')}{qids}"
     if ev == "timeline_settled":
         return f"Timeline settled:\n{e.get('summary', '')}"
     if ev == "self_check":
-        return (f"Self-check: {e.get('claims_checked', '?')} claims verified, "
-                f"{e.get('fixed', 0)} fixed.")
+        return (
+            f"Self-check: {e.get('claims_checked', '?')} claims verified, "
+            f"{e.get('fixed', 0)} fixed."
+        )
     if ev == "doc_ready":
         return f"*Verdict:* {e.get('verdict', '(missing)')}"
     if ev == "run_failed":
@@ -37,8 +42,9 @@ def _format(e: dict) -> str | None:
     return None  # tool_call, run_started, run_finished: not posted
 
 
-def tail_events(run_dir: Path, post, upload_doc,
-                stop: threading.Event, poll_s: float = 2.0) -> None:
+def tail_events(
+    run_dir: Path, post, upload_doc, stop: threading.Event, poll_s: float = 2.0
+) -> None:
     """Post new milestone lines until `stop` is set, then drain once and exit.
 
     post(text) sends a thread message; upload_doc(path) attaches a file.
@@ -65,8 +71,10 @@ def tail_events(run_dir: Path, post, upload_doc,
                         continue
                     try:
                         post(text)
-                        if event.get("event") == "doc_ready" and \
-                                (run_dir / "rca.md").exists():
+                        if (
+                            event.get("event") == "doc_ready"
+                            and (run_dir / "rca.md").exists()
+                        ):
                             upload_doc(run_dir / "rca.md")
                     except Exception:  # noqa: BLE001 — narration must not kill the run
                         pass

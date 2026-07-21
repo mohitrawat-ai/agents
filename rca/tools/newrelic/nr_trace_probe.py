@@ -18,10 +18,10 @@ APP = 1450765319
 
 QUERIES = {
     "volume_by_category_1d": f"SELECT count(*) FROM Span WHERE appId = {APP} "
-                             f"SINCE 1 day ago FACET category",
+    f"SINCE 1 day ago FACET category",
     "keyset": f"SELECT keyset() FROM Span WHERE appId = {APP} SINCE 1 day ago",
     "span_names_3h": f"SELECT count(*) FROM Span WHERE appId = {APP} "
-                     f"SINCE 3 hours ago FACET name LIMIT 40",
+    f"SINCE 3 hours ago FACET name LIMIT 40",
 }
 
 
@@ -29,7 +29,7 @@ def main() -> int:
     env = load_env(DOTENV)
     for label, q in QUERIES.items():
         try:
-            status, data, elapsed = run_nrql(q, env)
+            _status, data, elapsed = run_nrql(q, env)
             block = data["data"]["actor"]["account"]["nrql"]
             print(f"\n=== {label}  ({elapsed:.1f}s) ===")
             results = block.get("results")

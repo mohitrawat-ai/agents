@@ -18,10 +18,13 @@ from nr_run_nrql import DOTENV, load_env
 
 GUID = "MzMwODc2M3xBUE18QVBQTElDQVRJT058MTQ1MDc2NTMxOQ"  # REST API - Python
 
+# Placeholder substitution, not %-format or an f-string: the template is a
+# GraphQL document full of braces, and both of those would need every one
+# escaped. Same idiom as investigator/run.py's __TOOLS_DIR__.
 QUERY = """
 {
   actor {
-    entity(guid: "%s") {
+    entity(guid: "__GUID__") {
       name
       entityType
       relatedEntities {
@@ -34,19 +37,23 @@ QUERY = """
     }
   }
 }
-""" % GUID
+""".replace("__GUID__", GUID)
 
 
 def graphql(query: str, env: dict) -> dict:
     region = env.get("NEW_RELIC_REGION", "US").upper()
     endpoint = (
-        "https://api.eu.newrelic.com/graphql" if region == "EU"
+        "https://api.eu.newrelic.com/graphql"
+        if region == "EU"
         else "https://api.newrelic.com/graphql"
     )
     req = urllib.request.Request(
         endpoint,
         data=json.dumps({"query": query}).encode(),
-        headers={"Content-Type": "application/json", "API-Key": env["NEW_RELIC_API_KEY"]},
+        headers={
+            "Content-Type": "application/json",
+            "API-Key": env["NEW_RELIC_API_KEY"],
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as r:

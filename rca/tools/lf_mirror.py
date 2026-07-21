@@ -33,13 +33,19 @@ def _load_env() -> None:
         os.environ["LANGFUSE_HOST"] = os.environ["LANGFUSE_BASE_URL"]
 
 
-def mirror_span(run_dir: Path, name: str, input: dict,
-                output: object = None, error: str | None = None) -> None:
+def mirror_span(
+    run_dir: Path,
+    name: str,
+    input: dict,
+    output: object = None,
+    error: str | None = None,
+) -> None:
     """Add one span to run_dir's trace. Truncates nothing — the Langfuse UI
     handles large payloads better than a lossy log would."""
     _load_env()
-    if not (os.environ.get("LANGFUSE_PUBLIC_KEY")
-            and os.environ.get("LANGFUSE_SECRET_KEY")):
+    if not (
+        os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")
+    ):
         return
     try:
         # import after env is loaded so the client picks up the credentials
@@ -48,23 +54,24 @@ def mirror_span(run_dir: Path, name: str, input: dict,
         lf = get_client()
         run = run_dir.resolve()
         run_name = "/".join(run.parts[-2:])  # <slug>/<variant>
-        with propagate_attributes(
-            trace_name=run_name,
-            session_id=run_name,
-            tags=[TAG],
-            metadata={"run_dir": str(run)},
-        ):
-            with lf.start_as_current_observation(
+        with (
+            propagate_attributes(
+                trace_name=run_name,
+                session_id=run_name,
+                tags=[TAG],
+                metadata={"run_dir": str(run)},
+            ),
+            lf.start_as_current_observation(
                 as_type="span",
                 name=name[:80],
                 trace_context={"trace_id": lf.create_trace_id(seed=str(run))},
                 input=input,
-            ) as span:
-                if error:
-                    span.update(output=error, level="ERROR",
-                                status_message="failed")
-                elif output is not None:
-                    span.update(output=output)
+            ) as span,
+        ):
+            if error:
+                span.update(output=error, level="ERROR", status_message="failed")
+            elif output is not None:
+                span.update(output=output)
         lf.flush()
     except Exception as exc:  # noqa: BLE001 — tracing must never break a run
         print(f"[langfuse] mirroring failed: {exc}", file=sys.stderr)
@@ -79,13 +86,19 @@ def mirror_query(run_dir: Path, entry: dict) -> None:
         name=f"{entry.get('id', '?')} {entry.get('purpose', '')}",
         input={"purpose": entry.get("purpose"), "query": query_text},
         output={"rows": entry.get("rows"), "results": entry.get("results")}
-        if not err else None,
+        if not err
+        else None,
         error=json.dumps(err, default=str) if err else None,
     )
 
 
 def mirror_event(run_dir: Path, event: str, fields: dict) -> None:
     """Mirror one semantic milestone (emit.py) into the same trace."""
-    mirror_span(run_dir, name=f"[{event}] " + str(
-        fields.get("claim") or fields.get("verdict")
-        or fields.get("summary") or ""), input={"event": event, **fields})
+    mirror_span(
+        run_dir,
+        name=f"[{event}] "
+        + str(
+            fields.get("claim") or fields.get("verdict") or fields.get("summary") or ""
+        ),
+        input={"event": event, **fields},
+    )
