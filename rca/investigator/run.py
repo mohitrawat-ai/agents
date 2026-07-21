@@ -32,7 +32,10 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Glob", "Grep"]
 
 def load_env_into_os(path: Path) -> None:
     """Export .env keys into os.environ (ANTHROPIC_API_KEY for the SDK).
-    Same parser as tools/newrelic/nr_run_nrql.py; values never printed."""
+    Same parser as tools/newrelic/nr_run_nrql.py; values never printed.
+    Missing file is fine — env may already be set (clean checkout, hosted)."""
+    if not path.exists():
+        return
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:

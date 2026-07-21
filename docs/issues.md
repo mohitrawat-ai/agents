@@ -36,11 +36,16 @@ linting, formatting, and the `uv` layout — not scaffolding from zero.
 
 ### Acceptance criteria
 
-- [ ] The working system is committed, unmodified, as the first commit
-- [ ] `ruff` (lint + format) configured and passing
-- [ ] `.gitignore` covers `__pycache__`, `.venv`, and `.env`
-- [ ] No `.env` is tracked, and none ever becomes tracked
-- [ ] `uv run` starts the investigator from a clean checkout
+- [x] The working system is committed, unmodified, as the first commit (`0162a43`)
+- [x] `ruff` (lint + format) configured and passing (`e1833d0`)
+- [x] `.gitignore` covers `__pycache__`, `.venv`, and `.env`
+- [x] No `.env` is tracked, and none ever becomes tracked
+- [x] `uv run` starts the investigator from a clean checkout — verified 2026-07-21
+      via a scratchpad clone running `--mock` against a real alert file; needed a
+      missing-`.env` guard in `load_env_into_os` (crashed on any machine without
+      one)
+
+**Closed 2026-07-21.**
 
 ### Blocked by
 
