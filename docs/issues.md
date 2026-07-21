@@ -5,7 +5,7 @@
 > else moved, which is the evidence that the language was never the
 > architecture.
 
-Thirteen live issues covering `design.md` §6 (Slice 0–6) plus the gaps that §6
+Fourteen live issues covering `design.md` §6 (Slice 0–6) plus the gaps that §6
 assumed but never gave a home. **Not yet published.** Numbers below are local;
 they become real identifiers on publish, and "Blocked by" rewrites to match.
 Struck issues keep their numbers so the blocking graph still reads.
@@ -601,3 +601,62 @@ rebuild the script cannot do.
 ### Blocked by
 
 - #1. Blocks #2 (the database), and #9/#11/#13 as their AWS resources come up.
+
+---
+
+## 16 — NOTES appends vanish in a container: rule where instrument memory goes
+
+### What to decide, then build
+
+**Found 2026-07-21 tracing the close-out path.** `procedure.md:122` orders the
+agent to append instrument learnings to `NR_NOTES.md` / `CW_NOTES.md`. On the
+laptop that works because the tools dir is the repo working tree — a
+persistent disk, shared across runs by git. Hosted, the tools dir is baked
+into the image and the container is destroyed at task exit, so **the append
+silently vanishes** and every future run reads stale NOTES. The agent believes
+it is remembering; nothing is retained.
+
+This is the last unswept shared-disk assumption. P2 hunted the others (the
+record, the events tail, qid minting, the Q&A folder) but this write targets
+the *tools* dir, not the *incident* dir, and escaped the sweep. The NOTES are
+the system's only cross-run memory — the whole reason Setup step 2 reads them
+— so losing the write side means instrument knowledge stops compounding the
+day the system goes hosted.
+
+**This needs a ruling before it needs code.** Candidate shapes, with their
+costs:
+
+| Option | Mechanism | Cost |
+|---|---|---|
+| Emit-for-review | agent emits a `notes_proposed` event; the row surfaces for review; accepted entries are committed to the repo and ride the next image | a new event type, and a human in the loop |
+| NOTES to Postgres | a table read at boot, agent gains a write path to it | agent-writable shared state — see the constraint below |
+| Drop the instruction | delete `procedure.md:122`'s append step until a mechanism exists | memory stops compounding, openly instead of silently; a third `procedure.md` edit |
+
+**Constraint from P5's threat model, whichever way it goes:** the NOTES are
+read as trusted guidance by every future run. An unreviewed agent write path
+into them is a *persistence* channel for log-content prompt injection — a
+poisoned line written today is instructions to every investigation after it.
+Any ruling that lets agent text reach the NOTES without review has to answer
+this.
+
+**Invariant 1 is touched.** Options 1 and 3 edit `procedure.md` (the close-out
+wording), which currently allows exactly two ruled edits, both in Slice 1. A
+third needs its own ruling recorded there, same as §8c's.
+
+### Acceptance criteria
+
+- [ ] A ruling in `design.md` (§8a or §8c style) naming the chosen shape and
+      what it rejected
+- [ ] If `procedure.md` changes, invariant 1's edit list is updated in the
+      same commit
+- [ ] After one hosted run, a NOTES learning demonstrably survives to the next
+      run's Setup read — or the append instruction demonstrably no longer
+      exists
+- [ ] `feedback.md` explicitly out of scope (per-incident by design; its
+      fill-in loop is P13)
+
+### Blocked by
+
+- The ruling. Implementation must land before the first containerized run
+  (#9) — that is when appends start vanishing. If the ruling edits
+  `procedure.md`, the edit lands with #4's.
