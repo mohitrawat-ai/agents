@@ -272,11 +272,23 @@ happened in #4.
 
 ### Acceptance criteria
 
-- [ ] One real alert end-to-end produces a record equal in content to a #4 run
-- [ ] Wall-clock breach, exception, `is_error`, and budget breach return four distinguishable codes
-- [ ] `max_budget_usd` set; a deliberately low value stops the run and reports it
-- [ ] `procedure.md` is untouched by this issue
-- [ ] `CLAUDE_CONFIG_DIR` points at a temp dir
+- [ ] One real alert end-to-end produces a record equal in content to a #4 run — **deferred to #9's first `StartExecution` run (ruled in-session):** the $0.10 budget run already exercised the real SDK path, and #9's verify pays for a full run anyway
+- [x] Wall-clock breach, exception, `is_error`, and budget breach return four distinguishable codes — proven live: exits 2/0/3/4
+- [x] `max_budget_usd` set; a deliberately low value stops the run and reports it (`run_failed: budget cap $0.10 hit`, exit 4)
+- [x] `procedure.md` is untouched by this issue
+- [x] `CLAUDE_CONFIG_DIR` points at a temp dir, outside the agent's workdir
+
+**Closed 2026-07-21** (bar the deferred parity run above). Review findings
+fixed: hook DB I/O moved off the event loop (`asyncio.to_thread` +
+`connect_timeout=10` — a Neon stall could freeze the wall-clock timer);
+`mock_run`/setup crash guard added; `ensure_ascii=False` on alert.json.
+Ruled: `error_during_execution` routes to exit 5, infra tier, **retried** —
+a transient API blip must not permanently drop an incident (invariant 6).
+A retry restarts from zero under `attempt+1`; resume-from-where-it-stopped
+stays deferred per §8a-B's named triggers. Accepted: predictable workdir
+name in tmp (single-tenant container); dirty workdir on local same-attempt
+re-runs; budget classification is a string match on SDK error text (the
+subtype never surfaces — SDK raises instead of yielding the result).
 
 ### Blocked by
 

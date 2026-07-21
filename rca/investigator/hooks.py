@@ -1,19 +1,28 @@
-"""PostToolUse tap: append one line per tool call to the incident's events.jsonl.
+"""PostToolUse tap: one tool_call row in the events table per tool call.
 
-New code, 2026-07-18. This is the mechanical event layer from design-v2 D4 —
-the harness observing the loop without the procedure knowing. Semantic events
-(hypothesis formed/killed, timeline settled) are emitted by the agent itself
-per its procedure, into the same file. Later this same tap grows Langfuse
-OTLP spans (D9) with zero procedure changes.
+New code, 2026-07-18; sink moved from events.jsonl to Postgres 2026-07-21
+(issue #7). This is the mechanical event layer from design-v2 D4 — the
+harness observing the loop without the procedure knowing. Semantic events
+(hypothesis, timeline_settled, …) are emitted by the agent via tools/emit.py
+into the same table. The poller narrates milestones; tool_call rows are not
+narrated (design.md §5).
 
 Inputs are compacted per tool: a Bash call logs its command, file tools log
-the path — never full file contents, which would bloat the log (rca.md would
-appear twice) without helping the oncall reader.
+the path — never full file contents, which would bloat the record (rca.md
+would appear twice) without helping the oncall reader.
+
+A DB failure here is printed and swallowed: observation must not kill the
+investigation mid-run (same principle as lf_mirror, design-v2 D9).
 """
 
+import asyncio
 import json
-from datetime import UTC, datetime
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+
+import db
 
 
 def _compact(tool_name: str, tool_input: dict) -> dict:
@@ -25,20 +34,24 @@ def _compact(tool_name: str, tool_input: dict) -> dict:
     return {"input": json.dumps(tool_input, default=str)[:500]}
 
 
-def make_post_tool_use_hook(events_path: Path):
-    """Return a PostToolUse hook bound to one incident's events.jsonl."""
+def make_post_tool_use_hook():
+    """Return a PostToolUse hook writing tool_call rows for this task's
+    incident and attempt (scope comes from the environment, like the tools)."""
 
-    # _tool_use_id / _context: required by the SDK's hook signature, unused here.
     async def post_tool_use(input_data: dict, _tool_use_id, _context) -> dict:
         tool = input_data.get("tool_name", "?")
-        entry = {
-            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-            "event": "tool_call",
-            "tool": tool,
-            **_compact(tool, input_data.get("tool_input") or {}),
-        }
-        with events_path.open("a") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+        payload = {"tool": tool, **_compact(tool, input_data.get("tool_input") or {})}
+
+        def _insert() -> None:
+            with db.connect() as conn:
+                db.insert_event(conn, "tool_call", payload)
+
+        try:
+            # to_thread keeps blocking libpq I/O off the SDK's event loop —
+            # a hung connection here must not stop the wall-clock timer.
+            await asyncio.to_thread(_insert)
+        except Exception as exc:  # noqa: BLE001 — observation must not kill the run
+            print(f"[hooks] tool_call insert failed: {exc}", file=sys.stderr)
         return {}
 
     return post_tool_use

@@ -37,6 +37,8 @@ INSERT INTO documents (incident_id, attempt, name, content)
 VALUES (%s, %s, %s, %s)
 """
 
+_GET_INCIDENT = "SELECT slug, raw FROM incidents WHERE id = %s"
+
 
 def _env(name: str) -> str:
     value = os.environ.get(name)
@@ -49,7 +51,11 @@ def connect() -> psycopg.Connection:
     # RCA_DATABASE_URL is role-neutral on purpose: each task's environment
     # carries the DSN for its own role (investigator: rca_agent; Q&A
     # subprocess: rca_service). The code never knows which (P9 §4).
-    return psycopg.connect(_env("RCA_DATABASE_URL"), autocommit=True)
+    # connect_timeout: libpq's default is wait-forever, which would pin the
+    # investigator's event loop on a Neon stall (issue #7 review).
+    return psycopg.connect(
+        _env("RCA_DATABASE_URL"), autocommit=True, connect_timeout=10
+    )
 
 
 def scope() -> tuple[str, int]:
@@ -91,6 +97,16 @@ def insert_query(
         except UniqueViolation:
             continue
     raise SystemExit("qid mint lost the race 3 times; giving up")
+
+
+def get_incident(conn: psycopg.Connection) -> tuple[str, dict]:
+    """Return (slug, raw) for the environment's incident. Loud if absent —
+    a task started for a row that does not exist should fail, not guess."""
+    incident_id, _ = scope()
+    row = conn.execute(_GET_INCIDENT, (incident_id,)).fetchone()
+    if row is None:
+        raise SystemExit(f"no incidents row for {incident_id}")
+    return row[0], row[1]
 
 
 def insert_event(conn: psycopg.Connection, event: str, payload: dict) -> None:
