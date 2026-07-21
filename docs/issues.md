@@ -84,13 +84,19 @@ issue. Migrations are **Mohit's to run.** Hand over the exact command.
 
 ### Acceptance criteria
 
-- [ ] Migrations create four tables and three roles
-- [ ] `event_id` is UNIQUE on `incidents`; `(channel, thread_ts)` indexed together
-- [ ] `queries` and `events` carry `attempt`
-- [ ] No `dedup_key`, no `condition_guess`
-- [ ] `rca_agent` has no `UPDATE` and no `DELETE` — **proven by a failing statement, not by reading the grant**
-- [ ] `rca_poller` can `SELECT` `incidents` (it needs `channel`/`thread_ts`) and `UPDATE` only `narrated_through`
-- [ ] Migration command handed over, not executed
+- [x] Migrations create four tables and three roles (`rca/db/migrations/001`, `002`)
+- [x] `event_id` is UNIQUE on `incidents`; `(channel, thread_ts)` indexed together
+- [x] `queries` and `events` carry `attempt`
+- [x] No `dedup_key`, no `condition_guess`
+- [x] `rca_agent` has no `UPDATE` and no `DELETE` — **proven by a failing statement, not by reading the grant** (`tests/test_schema.py`, incl. TRUNCATE and `documents`)
+- [x] `rca_poller` can `SELECT` `incidents` (it needs `channel`/`thread_ts`) and `UPDATE` only `narrated_through`
+- [x] Migration command handed over, not executed — Mohit applied both against Neon; 22 tests green 2026-07-21
+
+**Closed 2026-07-21.** Reviewed by three Opus subagents; two test-coverage gaps
+fixed (documents/TRUNCATE denials). Accepted, not fixed: `\prompt` sends
+cleartext `CREATE ROLE` statements the server could log (rotation via
+`\password` declined); 002 is not re-runnable; no explicit `REVOKE CREATE ON
+SCHEMA public` (Neon is PG15+).
 
 ### Blocked by
 
@@ -590,12 +596,17 @@ string goes into SSM like any other secret. Account and database creation are
 No Terraform. The named failure that would change this: drift that bites, or a
 rebuild the script cannot do.
 
+**Progress 2026-07-21:** Postgres is **Neon** (ruled in-session: pooling fits
+the ~45 short-lived tool connections per run; cold start accepted). Project
+created by Mohit; role strings use the pooled endpoint, owner string direct,
+all local in `.env`. SSM lands with the AWS script.
+
 ### Acceptance criteria
 
 - [ ] Script checked in; every AWS resource the slices use is created by it
 - [ ] Re-running against an existing stack is safe
 - [ ] One-time manual steps (account signup, Slack app config) are written down next to it
-- [ ] Postgres reachable; connection string in SSM
+- [x] Postgres reachable (Neon, 2026-07-21); connection string in SSM pending
 - [ ] No resource exists that the script or its runbook lines don't record
 
 ### Blocked by
