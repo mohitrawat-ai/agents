@@ -324,16 +324,23 @@ and the partner's AWS account. Test it as such.
 
 ### Acceptance criteria
 
-- [ ] The four permitted invocations succeed
-- [ ] `curl`, `env`, `python3 -c`, `bash -c`, and a base64-decoded command are each denied
-- [ ] `Read /proc/self/environ` is denied
-- [ ] `Read` outside the run and tools directories is denied, including the transcript directory
-- [ ] `check_read_only` has direct tests for the mutating verbs it must refuse
-- [ ] A real alert still completes with the hook in place
+- [x] The four permitted invocations succeed (`test_boundary.py`; live run flowed aws/emit/Write)
+- [x] `curl`, `env`, `python3 -c`, `bash -c`, and a base64-decoded command are each denied
+- [x] `Read /proc/self/environ` is denied
+- [x] `Read` outside the run and tools directories is denied, including the transcript directory
+- [x] `check_read_only` has direct tests for the mutating verbs it must refuse (10 verbs, plus fail-closed flag-pollution)
+- [x] A real alert still completes with the hook in place — $0.30 budget-capped run: 5 real aws queries, all emits, rca.md Write, only correct denials (`pwd`, `&&`, `;`)
 
-### Blocked by
-
-- #7
+**Closed 2026-07-22.** A `PreToolUse` hook (not `can_use_tool`, which
+`allowed_tools` shadows), 12 tests. Three-Opus review found two real breaks,
+both fixed and tested: a **newline bypass** (shlex reads `\n` as whitespace,
+bash as a command separator — a second command on line two ran unchecked;
+newlines now denied) and an **empty-arg `IndexError`** that escaped uncaught
+(guarded; the whole callback now fails closed). Residual, recorded not fixed:
+the allowlist secures the executable and token one, trusting later args to
+reach the four scripts — safe only because none shell out with agent input
+(commented in `check_bash_command`); `resolve()` path checks are point-in-time
+(TOCTOU), unexploitable while Write is confined.
 
 ---
 
