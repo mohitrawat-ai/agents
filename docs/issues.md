@@ -228,11 +228,15 @@ investigation task, so a compromised investigation cannot speak as the bot.
 
 ### Acceptance criteria
 
-- [ ] All four loaders deleted; no code parses `.env`
-- [ ] No `.env` in the image, proven from a running container
-- [ ] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task
-- [ ] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added
-- [ ] Local dev still runs via an external env file
+- [x] All four loaders deleted; no code parses `.env` (plus `qa/agent.py`, which imported run.py's) — grep-clean; a real NR query works with `--env-file` and KeyErrors without it
+- [ ] No `.env` in the image, proven from a running container — **pending: no image exists until #9/#15**
+- [ ] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — **pending: no task definitions until #9/#15**
+- [ ] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — **pending: Slack app switches in #11**
+- [x] Local dev still runs via an external env file (`uv run --env-file .env`; `--mock` runs with no env at all)
+
+**Code half closed 2026-07-21** (loaders). The three pending criteria are
+container/app facts that cannot exist yet; they close inside #9/#11/#15 and
+this issue stays open as their tracker.
 
 ### Blocked by
 

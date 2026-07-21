@@ -4,8 +4,8 @@ Adapted from ingren-rca-bench/tools/bench_query.py::mirror_to_langfuse on
 2026-07-18 (the house pattern): one run dir = one trace (id seeded
 deterministically from its resolved path) = one session, so an investigation
 reads as a single timeline even though every query is a separate process.
-No-op unless LANGFUSE_PUBLIC_KEY/SECRET_KEY are set (process env or
-rca/.env); never raises — tracing must not break a run (design-v2 D9).
+No-op unless LANGFUSE_PUBLIC_KEY/SECRET_KEY are set in the process env;
+never raises — tracing must not break a run (design-v2 D9).
 
 Shared by nrql_log.py, aws_log.py, emit.py, and run.py — the third-consumer
 threshold that justified extracting a module.
@@ -16,19 +16,12 @@ import os
 import sys
 from pathlib import Path
 
-RCA_ROOT = Path(__file__).resolve().parents[1]
 TAG = "rca-agent"
 
 
 def _load_env() -> None:
-    env_path = RCA_ROOT / ".env"
-    if env_path.exists():
-        for raw in env_path.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    # .env parsing deleted 2026-07-21 (issue #6, P9 §3): credentials come
+    # from the process environment. Only the host alias remains.
     if os.environ.get("LANGFUSE_BASE_URL") and not os.environ.get("LANGFUSE_HOST"):
         os.environ["LANGFUSE_HOST"] = os.environ["LANGFUSE_BASE_URL"]
 

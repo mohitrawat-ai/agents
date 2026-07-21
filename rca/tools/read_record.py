@@ -39,9 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="one line per query")
     group.add_argument("--qid", help="full row for one qid")
-    ap.add_argument(
-        "--incident", help="ignored; scope comes from the task environment"
-    )
+    ap.add_argument("--incident", help="ignored; scope comes from the task environment")
     args = ap.parse_args(argv)
 
     if args.incident:

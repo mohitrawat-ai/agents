@@ -23,13 +23,14 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lf_mirror import mirror_query
-from nr_run_nrql import DOTENV, load_env, run_nrql
+from nr_run_nrql import run_nrql
 
 import db
 
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     nrql = args.nrql.strip()
-    status, data, elapsed = run_nrql(nrql, load_env(DOTENV))
+    status, data, elapsed = run_nrql(nrql, os.environ)
 
     errors = data.get("errors")
     results, metadata = None, {}

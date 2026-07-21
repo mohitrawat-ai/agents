@@ -20,11 +20,6 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "investigator"))
-from run import load_env_into_os
-
-RCA_ROOT = Path(__file__).resolve().parents[1]
-
 SYSTEM_PROMPT = """You answer an on-call engineer's question about ONE production
 incident, using only this incident's investigation record — you are in the
 run's folder:
@@ -91,7 +86,6 @@ def main() -> int:
     if chart_dir:
         chart_dir.mkdir(parents=True, exist_ok=True)
 
-    load_env_into_os(RCA_ROOT / ".env")
     print(asyncio.run(answer(run_dir, args.question, chart_dir)))
     return 0
 

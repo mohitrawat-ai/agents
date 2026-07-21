@@ -14,7 +14,6 @@ Usage:
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -28,20 +27,6 @@ TOOLS_DIR = RCA_ROOT / "tools"
 PROCEDURE = Path(__file__).resolve().parent / "procedure.md"
 
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Glob", "Grep"]
-
-
-def load_env_into_os(path: Path) -> None:
-    """Export .env keys into os.environ (ANTHROPIC_API_KEY for the SDK).
-    Same parser as tools/newrelic/nr_run_nrql.py; values never printed.
-    Missing file is fine — env may already be set (clean checkout, hosted)."""
-    if not path.exists():
-        return
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def emit(events_path: Path, event: str, **fields) -> None:
@@ -114,7 +99,6 @@ def main() -> int:
     run_dir = incident_dir / args.variant
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    load_env_into_os(RCA_ROOT / ".env")
     events_path = run_dir / "events.jsonl"
     emit(
         events_path,

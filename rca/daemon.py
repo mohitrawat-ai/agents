@@ -10,8 +10,8 @@ State (active run, recent dedup keys) is in-memory only — a restart forgets
 it; accepted for now, on the design doc's review-before-production list.
 
 Usage:
-    uv run python daemon.py
-Requires in rca/.env: SLACK_BOT_TOKEN (xoxb-), SLACK_APP_TOKEN (xapp-).
+    uv run --env-file .env python daemon.py
+Requires in the environment: SLACK_BOT_TOKEN (xoxb-), SLACK_APP_TOKEN (xapp-).
 """
 
 import json
@@ -49,17 +49,6 @@ def _incident_for_thread(thread_ts: str) -> Path | None:
     return None
 
 
-def load_env_into_os(path: Path) -> None:
-    """Same parser as investigator/run.py; values never printed."""
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-
-
-load_env_into_os(RCA_ROOT / ".env")
 app = App(token=os.environ["SLACK_BOT_TOKEN"])
 
 # in-memory daemon state (see review-before-production list)

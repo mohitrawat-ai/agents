@@ -1,33 +1,23 @@
 """Run one NRQL string (from stdin or arg) against NerdGraph and print response.
 
-Copied from ingren-rca/tools/nr_run_nrql.py on 2026-07-18; only change: .env
-is resolved from this project's root (prod/agents/rca/.env), not ingren-rca.
+Copied from ingren-rca/tools/nr_run_nrql.py on 2026-07-18; .env loader deleted
+2026-07-21 (issue #6, P9 §3) — credentials come from the process environment,
+loaded outside the code (`uv run --env-file .env` locally, task-definition
+secrets hosted).
 
 Read-only. No files written. Usage:
-    uv run python tools/newrelic/nr_run_nrql.py "SELECT count(*) FROM Span ..."
+    uv run --env-file ../.env python tools/newrelic/nr_run_nrql.py "SELECT ..."
 """
 
 import json
+import os
 import sys
 import time
 import urllib.request
-from pathlib import Path
-
-DOTENV = Path(__file__).resolve().parents[2] / ".env"
+from collections.abc import Mapping
 
 
-def load_env(path: Path) -> dict[str, str]:
-    env: dict[str, str] = {}
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        env[k.strip()] = v.strip().strip('"').strip("'")
-    return env
-
-
-def run_nrql(nrql: str, env: dict[str, str]) -> tuple[int, dict, float]:
+def run_nrql(nrql: str, env: Mapping[str, str]) -> tuple[int, dict, float]:
     """POST one NRQL to NerdGraph. Returns (http status, response json,
     elapsed seconds). Read-only."""
     region = env["NEW_RELIC_REGION"].upper()
@@ -69,7 +59,7 @@ def main() -> int:
     print("NRQL:")
     print(nrql)
     print()
-    status, data, elapsed = run_nrql(nrql, load_env(DOTENV))
+    status, data, elapsed = run_nrql(nrql, os.environ)
     print(f"HTTP {status} in {elapsed:.2f}s")
 
     if "errors" in data:
