@@ -134,11 +134,14 @@ system produces confident wrong answers.
    tools stay Python and stay where they are. It is the highest-value proven
    artifact in the system.
 
-   Two ruled edits apply, both in Slice 1, none after: §8a-E's deleted
-   topology-probe line at `:52`, and §8c's repoint of the self-check line
+   Four ruled edits apply, all in Slice 1, none after: §8a-E's deleted
+   topology-probe passage (`:51-52`); §8c's repoint of the self-check line
    (`:104-105`) from `queries.jsonl` to `read_record.py` — the file it names
-   stops existing when the tools' sink moves to Postgres. Both ruled on their
-   own merits, not port artifacts.
+   stops existing when the tools' sink moves to Postgres; and two micro-edits
+   ruled 2026-07-21 during Slice 1 itself (§8c, last bullet) — `:37`'s "this
+   folder's `queries.jsonl`" becomes "the incident record", `:64`'s
+   "`events.jsonl`" becomes "the emitted events". All ruled on their own
+   merits, not port artifacts.
 
 2. **The tools are the only path to telemetry.** `nrql_log`, `aws_log`, and
    `emit` are the sole structured writers; `procedure.md` forbids any other
@@ -837,6 +840,13 @@ updated in place.
   **second ruled edit** — the self-check line repoints from `queries.jsonl` to
   the read CLI. Invariant 1 now reads: two ruled edits, both in Slice 1, none
   after.
+- **Stale sink mentions, ruled 2026-07-21 during Slice 1** (supersedes the
+  edit count above): applying the two ruled edits left `:37` ("this folder's
+  `queries.jsonl`") and `:64` ("`events.jsonl`") describing a sink that no
+  longer exists. Ruled: two micro-edits — "the incident record" and "the
+  emitted events" — rather than leaving prose that points the agent at dead
+  files. Rejected: leaving them stale until a confused run named the failure.
+  Invariant 1 now reads: **four** ruled edits, all in Slice 1, none after.
 
 ---
 

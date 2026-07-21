@@ -78,7 +78,7 @@ def mirror_span(
 
 
 def mirror_query(run_dir: Path, entry: dict) -> None:
-    """Mirror one queries.jsonl entry (NRQL or aws cmd shape)."""
+    """Mirror one evidence entry (NRQL or aws cmd shape)."""
     query_text = entry.get("nrql") or entry.get("cmd") or ""
     err = entry.get("errors")
     mirror_span(

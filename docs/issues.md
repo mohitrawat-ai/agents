@@ -156,14 +156,21 @@ CLI.
 
 ### Acceptance criteria
 
-- [ ] All three tools write rows; no jsonl is produced
-- [ ] `procedure.md` differs from #1's commit by exactly the two ruled edits (§8c): the deleted probe line and the self-check repoint
-- [ ] `read_record.py` serves `--list` and `--qid`
-- [ ] Both topology probe scripts are deleted
-- [ ] qids come from `INSERT … RETURNING`; no `flock` remains
-- [ ] Failed and errored queries produce rows
-- [ ] Reads are scoped to the incident and attempt from the task environment; a flag aiming at another incident is ignored (moved from #2 — scoping is wrapper-level per the 2026-07-21 re-ruling of P9 §5)
-- [ ] **Verify:** run the investigator against a real alert with the tools pointed at Postgres. The record is identical in content to a jsonl run — diff it against #1's commit.
+- [x] All three tools write rows; no tool jsonl is produced (`run.py`'s lifecycle `events.jsonl` remains until #7)
+- [x] `procedure.md` differs from #1's commit by exactly the four ruled edits (§8c, incl. the 2026-07-21 stale-mention micro-edits): probe passage deleted, self-check repointed, `:37` and `:64` sink mentions updated
+- [x] `read_record.py` serves `--list` and `--qid` — the verify run's agent used it 5× in its self-check, unprompted
+- [x] Both topology probe scripts are deleted
+- [x] qids come from `INSERT … RETURNING`; no `flock` remains (grep-clean)
+- [x] Failed and errored queries produce rows (`test_tools_db.py`)
+- [x] Reads are scoped to the incident and attempt from the task environment; a flag aiming at another incident is ignored (moved from #2 — scoping is wrapper-level per the 2026-07-21 re-ruling of P9 §5)
+- [x] **Verify:** real alert (2026-07-18T02-47Z), tools on Postgres: 640s / 43 turns / $2.11. 34 queries + smoke, sequential qids, no duplicates, milestones + `rca.md` (11.5KB) in the record. Field parity with the jsonl shape except `exit_code` (accepted; error text carries the signal).
+
+**Closed 2026-07-21.** Three-Opus review: security sound; two stale-jsonl
+mentions fixed (`NR_NOTES.md:82`, `lf_mirror.py` docstring). Accepted by
+design: a DB-insert failure after a successful telemetry fetch discards the
+fetch (printing unlogged data would let the agent cite evidence outside the
+record; loud + re-run is invariant 6's direction); a re-emitted `doc_ready`
+inserts a second honest `documents` row; qids go `q100+` past 99, cosmetic.
 
 ### Blocked by
 
@@ -188,10 +195,12 @@ and #10 can be exercised before the router exists.
 
 ### Acceptance criteria
 
-- [ ] Takes an alert file path, inserts one `incidents` row, prints the id
-- [ ] Sets `channel` and `thread_ts` from arguments so the poller can post to a real thread
-- [ ] Runs against all nine alert files without special-casing
-- [ ] Insert is handed over as a command, not executed
+- [x] Takes an alert file path, inserts one `incidents` row, prints the id (`rca/db/seed_incident.py`)
+- [x] Sets `channel` and `thread_ts` from arguments so the poller can post to a real thread
+- [x] Runs against the alert files without special-casing (8 of 9 folders have `alert.json`; all 8 parse; one seeded for #4's verify)
+- [x] Insert is handed over as a command, not executed — Mohit ran it 2026-07-21
+
+**Closed 2026-07-21**, alongside #4.
 
 ### Blocked by
 

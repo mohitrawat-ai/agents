@@ -1,10 +1,15 @@
-"""Run one read-only aws CLI command and tee it into an incident's queries.jsonl.
+"""Run one read-only aws CLI command and tee it into the incident's Postgres record.
 
 The AWS counterpart of tools/newrelic/nrql_log.py, written 2026-07-18 after
 the 2026-07-07 hb-prod-lb-503 review showed AWS-side evidence going unlogged.
 Same receipts contract: every look at the data — including failures and dead
-ends — lands in the incident's queries.jsonl. Entries carry `cmd` where NRQL
-entries carry `nrql`.
+ends — lands in the record. Entries carry the aws command where NRQL entries
+carry the query string.
+
+Sink moved from queries.jsonl to Postgres 2026-07-21 (issue #4, P2 §1). Same
+CLI surface; --log-dir is kept for the CLI contract and the Langfuse mirror.
+qid minting is the insert itself (tools/db.py), so append_locked and its
+file lock are gone — and with them the duplicated copy this file carried.
 
 Read-only rail: the action verb must match an allowlist (describe-/get-/
 list-/filter-/lookup- prefixes, plus Logs Insights query-job verbs). Anything
@@ -12,42 +17,25 @@ else is refused before execution. `--profile hb-role --output json` are
 injected unless the command already sets them.
 
 Usage:
-    uv run python tools/cloudwatch/aws_log.py --log-dir <incident-variant-dir> \
+    python3 tools/cloudwatch/aws_log.py --log-dir . \
         --purpose "why" cloudwatch describe-alarm-history --alarm-name <name>
-
-append_locked is duplicated from tools/newrelic/nrql_log.py on purpose —
-shared-module plumbing across source dirs isn't worth it until a third
-telemetry source exists.
 """
 
 import argparse
-import fcntl
 import json
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lf_mirror import mirror_query
 
+import db
+
 ALLOWED_PREFIXES = ("describe-", "get-", "list-", "filter-", "lookup-")
 ALLOWED_EXACT = {"start-query", "stop-query", "tail"}
-
-
-def append_locked(log_path: Path, entry: dict) -> str:
-    """Mint the next qid and append entry under an exclusive lock, so
-    parallel invocations can't count the same prior lines and collide."""
-    with log_path.open("a+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        f.seek(0)
-        n_prior = sum(1 for _ in f)
-        qid = f"q{n_prior + 1:02d}"
-        entry = {"id": qid, **entry}
-        f.write(json.dumps(entry, default=str) + "\n")
-    return qid
 
 
 def check_read_only(aws_args: list[str]) -> str | None:
@@ -66,10 +54,10 @@ def check_read_only(aws_args: list[str]) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Run one read-only aws CLI command, log it to queries.jsonl."
+        description="Run one read-only aws CLI command, log it to the record."
     )
     ap.add_argument(
-        "--log-dir", required=True, help="incident variant dir (holds queries.jsonl)"
+        "--log-dir", required=True, help="run dir (kept for the CLI contract)"
     )
     ap.add_argument("--purpose", required=True, help="why this command is being run")
     ap.add_argument(
@@ -97,9 +85,6 @@ def main(argv: list[str] | None = None) -> int:
     if "--output" not in aws_args:
         aws_args += ["--output", "json"]
 
-    log_path = Path(args.log_dir) / "queries.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
     cmd = ["aws", *aws_args]
     t0 = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -112,19 +97,32 @@ def main(argv: list[str] | None = None) -> int:
         except json.JSONDecodeError:
             output = proc.stdout
 
-    entry = {
-        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-        "purpose": args.purpose,
-        "cmd": " ".join(cmd),
-        "elapsed_s": round(elapsed, 2),
-        "exit_code": proc.returncode,
-        "output": output,
-        "errors": proc.stderr.strip() or None if proc.returncode != 0 else None,
-    }
-    qid = append_locked(log_path, entry)
-    mirror_query(Path(args.log_dir), {"id": qid, **entry})
+    error = proc.stderr.strip() or None if proc.returncode != 0 else None
+    with db.connect() as conn:
+        qid = db.insert_query(
+            conn,
+            source="aws",
+            purpose=args.purpose,
+            query=" ".join(cmd),
+            elapsed_s=round(elapsed, 2),
+            rows=None,
+            result=output,
+            error=error,
+        )
+    mirror_query(
+        Path(args.log_dir),
+        {
+            "id": qid,
+            "purpose": args.purpose,
+            "cmd": " ".join(cmd),
+            "elapsed_s": round(elapsed, 2),
+            "exit_code": proc.returncode,
+            "output": output,
+            "errors": error,
+        },
+    )
 
-    print(f"[{qid}] logged -> {log_path}")
+    print(f"[{qid}] logged -> postgres")
     print("CMD:", " ".join(cmd))
     print(f"exit {proc.returncode} in {elapsed:.2f}s")
     if proc.returncode != 0:

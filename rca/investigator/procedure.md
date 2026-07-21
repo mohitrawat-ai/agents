@@ -34,7 +34,7 @@ Your working directory is this run's folder. The alert is at `../alert.json`.
 
 Every look at telemetry goes through a logging wrapper — never query any
 other way during a run. Both wrappers append `{id, ts, purpose, ...}` to
-this folder's `queries.jsonl` and echo the assigned id (`q01`, `q02`, …).
+the incident record and echo the assigned id (`q01`, `q02`, …).
 Those ids are how the document cites evidence. Failed and dead-end queries
 get logged too — a dead end is evidence.
 
@@ -48,9 +48,6 @@ CloudWatch / AWS (read-only aws CLI, verb allowlist enforced):
     python3 __TOOLS_DIR__/cloudwatch/aws_log.py --log-dir . \
         --purpose "<why>" <service> <action> [args...]
 
-Topology probes, when you need who-calls-whom:
-`__TOOLS_DIR__/newrelic/nr_relationships.py`, `nr_trace_probe.py`.
-
 ## Investigation
 
 How you investigate is your call — form hypotheses, query, follow what the
@@ -61,8 +58,8 @@ as an open question — never guess to make the story complete.
 
 ## Emit progress events as you work
 
-An on-call engineer follows this run live through `events.jsonl`. Emit at
-these moments (same folder, via the validating CLI):
+An on-call engineer follows this run live through the emitted events. Emit
+at these moments (same folder, via the validating CLI):
 
     python3 __TOOLS_DIR__/emit.py --dir . <event> '<json fields>'
 
@@ -102,10 +99,11 @@ deviations from usual levels. No statistics jargon in the narrative.
 ## Self-check pass (mandatory)
 
 Re-read `rca.md`; for **every** quantitative claim, verify the number and
-the cited query id against `queries.jsonl`. Fix what's wrong; if a claim has
-no supporting logged query, either run and log the query now or delete the
-claim. A document with an unverifiable claim in it does not ship. Then emit
-the `self_check` event with counts.
+the cited query id against the record — `python3 __TOOLS_DIR__/read_record.py
+--list` for the overview, `--qid <id>` for one query. Fix what's wrong; if a
+claim has no supporting logged query, either run and log the query now or
+delete the claim. A document with an unverifiable claim in it does not ship.
+Then emit the `self_check` event with counts.
 
 ## Close out
 

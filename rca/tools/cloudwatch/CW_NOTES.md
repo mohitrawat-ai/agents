@@ -53,3 +53,45 @@ no "X usually breaks".
   is mutable — never trust a cached inventory).
 - LB ARN for `app/hb-prod-lb`:
   `arn:aws:elasticloadbalancing:ap-south-1:356367897942:loadbalancer/app/hb-prod-lb/a0ccd5f577529509`
+
+## Decomposing an aggregate 5xx/4xx alarm
+
+- `AWS/ApplicationELB` exposes per-status-code metrics beyond the aggregate
+  `HTTPCode_ELB_5XX_Count` / `HTTPCode_Target_5XX_Count`: `HTTPCode_ELB_500_Count`,
+  `HTTPCode_ELB_502_Count`, `HTTPCode_ELB_503_Count`, `HTTPCode_ELB_504_Count`
+  each exist as their own metric (LB dimension, and per-AZ). Don't assume which
+  ones are emitted for a given LB — run `cloudwatch list-metrics --namespace
+  AWS/ApplicationELB --dimensions Name=LoadBalancer,Value=<lb>` first and query
+  only the codes that actually appear; codes with zero occurrences in the
+  window return an **empty `Datapoints` array**, same empty-vs-nonexistent
+  ambiguity as other Sum-based ELB count metrics noted above.
+- Querying an `HTTPCode_ELB_*_Count` metric **with the `TargetGroup` dimension**
+  attributes the response to that group only if the LB actually reached a
+  routing decision for it. An LB-level 5xx that returns **empty** for every
+  registered target group (queried individually) means the error was generated
+  by the ALB frontend before/without completing target routing — a way to tell
+  frontend-side errors apart from target-side ones using CloudWatch alone, no
+  access-log needed.
+- `HealthyStateRouting` / `UnhealthyStateRouting` (dimensions: `LoadBalancer` +
+  `TargetGroup` + `AvailabilityZone`) are newer, per-AZ health metrics, finer
+  grained than the classic `HealthyHostCount`/`UnHealthyHostCount` (which is a
+  per-TG total, not per-AZ, and can mask a single-AZ gap). Discover their
+  exact AZ dimension values via `list-metrics` rather than guessing.
+- `ConsumedLCUs` (namespace `AWS/ApplicationELB`, `LoadBalancer` dimension
+  only) is the LB's own capacity-unit consumption — check this before
+  suspecting LB-side throttling; typical idle/light values are ~0.005–0.02.
+- `elbv2 describe-listeners --load-balancer-arn <arn>` returns each listener's
+  `DefaultActions[].ForwardConfig.TargetGroups[]` with a `Weight` per group.
+  An LB can have target groups registered (visible in
+  `describe-target-groups`) that carry **zero listener weight or aren't
+  referenced by any listener rule at all** — i.e. exist but serve no live
+  traffic. Always check listener weights before assuming a target group in
+  `describe-target-groups` is part of the live serving path.
+- `cloudwatch describe-alarm-history --alarm-name <name> --history-item-type
+  StateUpdate --start-date <x> --end-date <y>` is the way to check whether an
+  alarm is chronically flapping or fired once — cheap and worth running before
+  investigating a specific breach, to calibrate whether the alarm itself is
+  noisy.
+- `AWS/EC2` `StatusCheckFailed` (dimension `InstanceId`) is the standard
+  instance-level health metric for a reboot/network-blip check when a target
+  group has few enough hosts to check them individually.

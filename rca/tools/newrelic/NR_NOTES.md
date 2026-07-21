@@ -79,7 +79,7 @@ not all; DevTools is the reliable path.
 ## Tools that depend on these findings
 
 - `tools/newrelic/nr_run_nrql.py` — generic ad-hoc NRQL runner (one query at a time).
-- `tools/newrelic/nrql_log.py` — same runner, teeing into an incident's queries.jsonl.
+- `tools/newrelic/nrql_log.py` — same runner, teeing into the incident record.
 
 (ingren-rca's `nr_export_incident.py` and the incident-replay notebooks also
 depend on them; those stay with that repo.)
