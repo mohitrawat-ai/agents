@@ -81,13 +81,17 @@ def mirror_query(run_dir: Path, entry: dict) -> None:
     """Mirror one evidence entry (NRQL or aws cmd shape)."""
     query_text = entry.get("nrql") or entry.get("cmd") or ""
     err = entry.get("errors")
+    if err:
+        output = None
+    elif "cmd" in entry:  # aws shape: exit_code/output, no rows/results
+        output = {"exit_code": entry.get("exit_code"), "output": entry.get("output")}
+    else:
+        output = {"rows": entry.get("rows"), "results": entry.get("results")}
     mirror_span(
         run_dir,
         name=f"{entry.get('id', '?')} {entry.get('purpose', '')}",
         input={"purpose": entry.get("purpose"), "query": query_text},
-        output={"rows": entry.get("rows"), "results": entry.get("results")}
-        if not err
-        else None,
+        output=output,
         error=json.dumps(err, default=str) if err else None,
     )
 
