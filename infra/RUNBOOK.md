@@ -21,6 +21,19 @@ record.
 | Slack app: delete `SLACK_APP_TOKEN`, add `SLACK_SIGNING_SECRET`, switch to HTTP Request URL | #11 |
 | SNS alarm subscription (email/phone confirm) | #13 |
 
+## Image build and push (#9)
+
+The image is ARM64: built on the laptop (Apple Silicon), run on Fargate
+ARM. From the repo root:
+
+    aws ecr get-login-password --profile ingren --region ap-south-1 \
+      | docker login --username AWS --password-stdin 537124933640.dkr.ecr.ap-south-1.amazonaws.com
+    docker buildx build --platform linux/arm64 \
+      -t 537124933640.dkr.ecr.ap-south-1.amazonaws.com/rca:latest --push rca/
+
+The task definition pins `:latest`; a push then a new `StartExecution`
+picks it up. No redeploy step exists yet — one task per run.
+
 ## Running the script
 
 From the repo root:
