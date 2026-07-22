@@ -274,7 +274,7 @@ happened in #4.
 
 ### Acceptance criteria
 
-- [ ] One real alert end-to-end produces a record equal in content to a #4 run — **deferred to #9's first `StartExecution` run (ruled in-session):** the $0.10 budget run already exercised the real SDK path, and #9's verify pays for a full run anyway
+- [x] One real alert end-to-end produces a record equal in content to a #4 run — ruled equal 2026-07-22 (Mohit, side-by-side read): same verdict from the hosted run, 23 queries vs 35, plus a recurrence finding the old run missed. #7 fully closed
 - [x] Wall-clock breach, exception, `is_error`, and budget breach return four distinguishable codes — proven live: exits 2/0/3/4
 - [x] `max_budget_usd` set; a deliberately low value stops the run and reports it (`run_failed: budget cap $0.10 hit`, exit 4)
 - [x] `procedure.md` is untouched by this issue
