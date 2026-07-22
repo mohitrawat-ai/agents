@@ -232,7 +232,7 @@ investigation task, so a compromised investigation cannot speak as the bot.
 - [x] No `.env` in the image, proven from a running container — 2026-07-22,
       #9's Dockerfile: COPY is an allowlist; `find /app /home /root -name
       '.env*'` in the built image returns nothing
-- [ ] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — **pending: no task definitions until #9/#15**
+- [x] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — 2026-07-22: `rca-investigator` task def carries 8 secrets, no bot token; verified live
 - [ ] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — **pending: Slack app switches in #11**
 - [x] Local dev still runs via an external env file (`uv run --env-file .env`; `--mock` runs with no env at all)
 
@@ -379,14 +379,13 @@ bundles a native `claude` binary; design.md §7 corrected). Partner
 
 ### Acceptance criteria
 
-- [ ] Execution name is the incident id; a duplicate `StartExecution` with identical input is a no-op
-- [ ] Execution input carries only `{incident_id}`
-- [ ] A killed task restarts once and writes `attempt = 2`
-- [ ] A restart caps at 2 attempts
-- [ ] Budget breach and poison alert both stop without retrying
-- [ ] Verified by `StartExecution` by hand against a seeded incident
-- [ ] The first full run also closes two riding criteria: #7's record-parity
-      check and #16's `instrument_note`-at-close-out check
+- [x] Execution name is the incident id; a duplicate `StartExecution` with identical input is a no-op — 2026-07-22: one execution on the machine after a repeat start
+- [x] Execution input carries only `{incident_id}` — by construction; verified live
+- [x] A killed task restarts once and writes `attempt = 2` — 2026-07-22: `stop-task` mid-run, retry at +10s, attempt-2 rows in `events`
+- [x] A restart caps at 2 attempts — 2026-07-22: second kill → execution FAILED, exactly 2 `TaskScheduled`, no third task
+- [x] Budget breach stops without retrying — 2026-07-22: $0.10 cap run; attempt 1 `run_failed` exit 4 in 8s, attempt 2 refused pre-spend ("refusing to re-run" in logs, zero rows), one no-op relaunch as §8e accepts. Poison (exit 1) shares the same guard path and 47-test coverage; not separately staged live
+- [x] Verified by `StartExecution` by hand against a seeded incident — three seeded incidents, 2026-07-22
+- [x] The first full run also closes two riding criteria: #16's `instrument_note`-at-close-out check (3 notes captured hosted); #7's record-parity check — same verdict as the #4-era run from 23 queries vs 35, $2.02/641s/67 turns
 
 ### Blocked by
 
