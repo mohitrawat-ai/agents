@@ -1,0 +1,7 @@
+# Defense in depth: the Dockerfile COPYs an explicit allowlist, so nothing
+# here can reach the image anyway. This file keeps secrets and junk out of
+# the build context itself (#6: no .env in the image).
+.env*
+.venv/
+**/__pycache__/
+tests/

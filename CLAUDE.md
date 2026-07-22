@@ -56,9 +56,10 @@ Python, everywhere in our code. Scoped to this system deliberately — the wider
 ingren platform is TypeScript, and if this service is ever absorbed into it the
 ruling should be re-read (§8a-F, cost 4).
 
-**The image still needs Node.** `claude_agent_sdk` is a thin client that spawns
-the `claude` Node CLI as a subprocess: `python → claude CLI (node) → bash →
-python3 tools`. §8a-F buys one language in our code, not one runtime in the box.
+**The image does not need Node** (corrected 2026-07-22). `claude_agent_sdk`
+still spawns the `claude` CLI as a subprocess: `python → claude CLI → bash →
+python3 tools`. But the SDK wheel bundles a native CLI binary per platform,
+so no separate Node or `@anthropic-ai/claude-code` install exists in the image.
 
 ## Database
 

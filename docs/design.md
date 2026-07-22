@@ -396,12 +396,13 @@ three-line `procedure.md` edit, both of which §8a-F removes.
 
 ## 7. Known gotchas
 
-- **`claude_agent_sdk` spawns the `claude` Node CLI as a subprocess.** The
-  process tree is `python → claude CLI (node) → bash → python3 tools`. **The
-  image needs Node and `@anthropic-ai/claude-code` regardless of what language
-  we write** — plus the AWS CLI. §8a-F does not change this and does not claim
-  to; the runtime carries both either way. It buys one language in *our* code,
-  not one runtime in the image.
+- **`claude_agent_sdk` spawns the `claude` CLI as a subprocess.** The
+  process tree is `python → claude CLI → bash → python3 tools`. *(Corrected
+  2026-07-22, issue #9's Dockerfile:)* the SDK wheel bundles a native CLI
+  binary per platform, and the SDK prefers it over PATH — so **the image
+  needs no Node and no `@anthropic-ai/claude-code` install**, only the AWS
+  CLI. The CLI version rides the SDK pin in `uv.lock`. The earlier claim
+  that the image carries Node regardless of §8a-F is withdrawn.
 - **The subprocess always writes transcripts to local disk**, so the transcript
   is a file the agent could `Read`. Point `CLAUDE_CONFIG_DIR` at a temp dir via
   `options.env` and make sure the `Read` confinement covers it. This holds with
@@ -787,9 +788,10 @@ such step. Small, real, and paid every iteration.
   exists. §2 and Slice 0 both now say so.
 - **The `S3SessionStore` adapter is hand-written** if §8a-B's trigger ever
   fires. Deferred, so unpaid today.
-- **Two runtimes stay in the image.** Node and `@anthropic-ai/claude-code` are
-  required by the SDK no matter what we write. F buys one language in our code,
-  not one runtime in the box, and §7 now says that explicitly.
+- **Two runtimes stay in the image.** *(Cost retired 2026-07-22:)* the SDK
+  wheel bundles a native `claude` binary, so no Node lands in the image —
+  see §7. The cost was accepted when ruled and turned out not to exist.
+  F's balance only improves; nothing re-opens.
 - **If the wider platform ever absorbs this service**, the scope argument in 2
   inverts and this ruling should be re-read. That is the trigger.
 

@@ -229,7 +229,9 @@ investigation task, so a compromised investigation cannot speak as the bot.
 ### Acceptance criteria
 
 - [x] All four loaders deleted; no code parses `.env` (plus `qa/agent.py`, which imported run.py's) — grep-clean; a real NR query works with `--env-file` and KeyErrors without it
-- [ ] No `.env` in the image, proven from a running container — **pending: no image exists until #9/#15**
+- [x] No `.env` in the image, proven from a running container — 2026-07-22,
+      #9's Dockerfile: COPY is an allowlist; `find /app /home /root -name
+      '.env*'` in the built image returns nothing
 - [ ] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — **pending: no task definitions until #9/#15**
 - [ ] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — **pending: Slack app switches in #11**
 - [x] Local dev still runs via an external env file (`uv run --env-file .env`; `--mock` runs with no env at all)
@@ -367,6 +369,13 @@ by exiting with the same code, pre-spend. No row = hard death = proceed.
 
 A restart increments `attempt`, so its second set of evidence rows stays
 distinguishable from the first.
+
+**Progress 2026-07-22:** image unit landed — `rca/Dockerfile` +
+`entrypoint.sh` + `.dockerignore`, built and verified from the container
+(no `.env`, bundled CLI runs, aws CLI present, no Node — the SDK wheel
+bundles a native `claude` binary; design.md §7 corrected). Partner
+`hb-role` profile is entrypoint-written from `PARTNER_ROLE_ARN` /
+`PARTNER_EXTERNAL_ID`, injected from SSM by the task definition.
 
 ### Acceptance criteria
 
