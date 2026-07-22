@@ -833,7 +833,12 @@ updated in place.
 - **Provisioning is a checked-in AWS CLI script** (issue #15). One script of
   `aws` commands creates every AWS resource the slices assume. No Terraform —
   add it only on a named failure: drift that bites, or a rebuild the script
-  cannot do.
+  cannot do. *Amended 2026-07-22: one script became three plus a shared
+  `lib.sh`, split on idle cost and change frequency —
+  `provision-foundation.sh` (free, static), `provision-definitions.sh`
+  (free, hot), `services.sh up|down` (the paid resources, so testing
+  downtime costs ~nothing). Still AWS CLI, still no Terraform; the ruling's
+  substance is unchanged.*
 - **Postgres is managed outside AWS — Neon or Supabase.** Created before the
   schema issue; the connection string lands in SSM like any other secret.
   Account and database creation are Mohit's to run.

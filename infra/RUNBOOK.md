@@ -1,9 +1,47 @@
 # Infra runbook — one-time manual steps (issue #15)
 
-`provision.sh` creates every AWS resource. This file records what the
-script cannot do: account-level and third-party steps, done by hand.
-Acceptance rule: no resource exists that the script or these lines don't
+The provision scripts create every AWS resource. This file records what
+they cannot do: account-level and third-party steps, done by hand.
+Acceptance rule: no resource exists that the scripts or these lines don't
 record.
+
+## The scripts
+
+One script became three on 2026-07-22 (design.md §8c amendment), split on
+idle cost and change frequency. All source `lib.sh` (account gate, shared
+names, network lookups). All run the same way, from the repo root:
+
+    uv run --project rca --env-file rca/.env bash infra/<script>
+
+| Script | Holds | Idle cost | Run when |
+|---|---|---|---|
+| `provision-foundation.sh` | SSM params, ECR, logs, all IAM roles, cluster + task SG, queues | ~zero | Once; then on secret rotation or policy change |
+| `provision-definitions.sh` | 3 task definitions, state machine | zero | After editing any of them |
+| `services.sh up\|down\|status` | poller Service, ALB + listener + CNAME, rca-service | ~$40/mo when up | `up` to test, `down` between sessions |
+
+Order on a bare account: foundation, definitions, image push, `services.sh up`.
+
+uv loads the env file (bash `source` disagreed with its format). Every
+script pins profile `ingren` and region `ap-south-1`, refuses any other
+account, and is safe to re-run.
+
+## services.sh up/down — what to know
+
+- **down means off.** Alerts during downtime are not investigated. Only
+  Mohit tags the bot for now, so this is a known, accepted state.
+- **Slack may disable the event subscription during a long down.** The
+  Request URL answers nothing; Slack retries, warns, and can switch the
+  subscription off. After `up`, check the Slack app config → Event
+  Subscriptions; re-verify the URL if it shows disabled.
+- **The ALB DNS name rotates on recreate.** `up` re-UPSERTs the
+  `rca.ingren.ai` CNAME itself (zone is in-account). The cert and the
+  Slack Request URL point at the hostname and survive. Allow ~60s TTL
+  plus ALB provisioning before the first event flows.
+- **`up` is also the deploy step**: it rolls both Services to the latest
+  task-def revision. After a definitions change while already up, either
+  re-run `up` or roll by hand (see poller deploy below).
+- **desired counts**: poller 1 (pinned, never two), rca-service 1
+  (testing; design §3 says 2 — restore at go-live by editing `up`).
 
 ## Done
 
@@ -15,6 +53,7 @@ record.
 | Region ruling | `ap-south-1` (Mumbai) | 2026-07-22 |
 | Domain + cert + 443 listener | `rca.ingren.ai` (Route 53 zone in-account), ACM cert ISSUED, listener live, `/healthz` ok | 2026-07-22 |
 | Slack app switch | Request URL verified, `app_mention` subscribed, `SLACK_APP_TOKEN` deleted, laptop daemon killed | 2026-07-22 |
+| Script split | one provision.sh → foundation / definitions / services + lib | 2026-07-22 |
 
 ## Pending
 
@@ -25,7 +64,8 @@ record.
 ## HTTPS for the ingress (#11)
 
 Slack requires an HTTPS Request URL, so the ALB listener needs an ACM
-certificate, and the certificate needs a domain. All manual, in order:
+certificate, and the certificate needs a domain. All manual, in order
+(done 2026-07-22; kept for a rebuild):
 
 1. Pick a hostname you control, e.g. `rca.<your-domain>`.
 2. Request the cert (must be in ap-south-1, same region as the ALB):
@@ -35,9 +75,8 @@ certificate, and the certificate needs a domain. All manual, in order:
 
 3. Add the DNS validation CNAME that ACM prints to your DNS. Wait for
    `ISSUED` (`aws acm describe-certificate`).
-4. CNAME `rca.<your-domain>` to the ALB DNS name (provision.sh prints it).
-5. Put the cert ARN in `rca/.env` as `RCA_ALB_CERT_ARN`, re-run
-   provision.sh. The 443 listener lands on that run.
+4. Put the cert ARN in `rca/.env` as `RCA_ALB_CERT_ARN` — `services.sh up`
+   requires it, creates the listener, and writes the CNAME itself.
 
 ## Slack app switch (#11)
 
@@ -49,7 +88,8 @@ nothing.
 After the listener answers:
 
 1. In the Slack app config, copy the Signing Secret; add it to `rca/.env`
-   as `SLACK_SIGNING_SECRET`; re-run provision.sh (lands in SSM).
+   as `SLACK_SIGNING_SECRET`; re-run provision-foundation.sh (lands in
+   SSM).
 2. Event Subscriptions -> Request URL:
    `https://rca.<your-domain>/slack/events`. Slack sends the
    `url_verification` challenge; ingress echoes it.
@@ -68,26 +108,15 @@ ARM. From the repo root:
     docker buildx build --platform linux/arm64 \
       -t 537124933640.dkr.ecr.ap-south-1.amazonaws.com/rca:latest --push rca/
 
-The task definition pins `:latest`; a push then a new `StartExecution`
-picks it up. No redeploy step exists yet — one task per run.
+The task definitions pin `:latest`; a push then a new `StartExecution`
+picks it up for the investigator. Running Services need a roll (below).
 
 ## Poller deploy (#10)
 
 The poller is an ECS Service pinned to one task. Order matters on first
-provision: push an image that contains `poller/` first, then run
-`provision.sh` — a Service started against an image without the code
-crash-loops. After later code changes, push and then roll the Service:
+provision: push an image that contains `poller/` first, then `services.sh
+up` — a Service started against an image without the code crash-loops.
+After later code changes, push and then roll the Service:
 
     aws ecs update-service --profile ingren --region ap-south-1 \
       --cluster rca --service rca-poller --force-new-deployment
-
-## Running the script
-
-From the repo root:
-
-    uv run --project rca --env-file rca/.env bash infra/provision.sh
-
-uv loads the env file (bash `source` disagreed with its format). The
-script pins profile `ingren` and region `ap-south-1`, refuses any other
-account, and is safe to re-run. It prints one line per resource it
-touched.
