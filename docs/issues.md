@@ -233,7 +233,7 @@ investigation task, so a compromised investigation cannot speak as the bot.
       #9's Dockerfile: COPY is an allowlist; `find /app /home /root -name
       '.env*'` in the built image returns nothing
 - [x] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — 2026-07-22: `rca-investigator` task def carries 8 secrets, no bot token; verified live
-- [x] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — 2026-07-23, with #11's app switch; secret in SSM, Request URL verified. **#6 fully closed**
+- [x] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — 2026-07-22, with #11's app switch; secret in SSM, Request URL verified. **#6 fully closed**
 - [x] Local dev still runs via an external env file (`uv run --env-file .env`; `--mock` runs with no env at all)
 
 **Code half closed 2026-07-21** (loaders). The three pending criteria are
@@ -429,7 +429,7 @@ Also owns two things moved here by §8a-A:
 quiet, indistinguishable from a slow investigation. Something whose only job is
 talking should be loudly broken when it cannot talk.
 
-**Progress 2026-07-23:** built — `poller/main.py` (single file), migration
+**Progress 2026-07-22:** built — `poller/main.py` (single file), migration
 004 (`terminal_posted_at` + poller grant, a P9 §5 amendment ruled
 in-session: the poller updates exactly the columns recording its own
 actions), poller section in `provision.sh` (role `rca-poller` with
@@ -444,7 +444,7 @@ payload would have wedged the cursor forever); posts truncated at Slack's
 hard death *or* startup failure, since exit 2 usually cannot write a row.
 Never-started grace raised 600s→1800s: the close is irreversible, so the
 window must clear any redelivery span; #11 pins it when the queue exists.
-Deployed 2026-07-23: service ACTIVE 1/1, clean boot, 0 open incidents
+Deployed 2026-07-22: service ACTIVE 1/1, clean boot, 0 open incidents
 after backfill. **Live acceptance deferred to `docs/live-tests.md`
 Batch A** (ruled in-session: paid checks batch across issues).
 Residuals recorded, not fixed: `update-service` re-runs don't re-assert
@@ -455,9 +455,9 @@ incidents, or first boot narrates every old thread.
 
 ### Acceptance criteria
 
-- [ ] Narrates milestones from `events` by row-id cursor; `tool_call` is not posted
-- [ ] Posts the ack off `run_started`, exactly once across a restart
-- [ ] Terminal message comes from `DescribeExecution` and distinguishes #7's exit codes
+- [x] Narrates milestones from `events` by row-id cursor; `tool_call` is not posted — A1, 35c6e40f run, 2026-07-22
+- [x] Posts the ack off `run_started`, exactly once across a restart — A2 forced redeploy mid-run, 35c6e40f run, 2026-07-22
+- [x] Terminal message comes from `DescribeExecution` — success side proven (A1, 35c6e40f run, 2026-07-22); exit-code side rides A3 *(open)*
 - [ ] `ExecutionDoesNotExist` posts a failure rather than waiting forever
 - [ ] A killed task mid-run still produces a terminal message
 - [ ] Errors are logged, not swallowed; repeated failures are a liveness signal
@@ -511,7 +511,7 @@ any threshold between them works and the number never needs tuning.
 of an alert as a Slack message, and that is the only form `parse_alert` will
 ever see. Costs nothing beyond the write, and it is what unblocks dedup later.
 
-**Progress 2026-07-23:** built — `service/ingress.py` (bolt over HTTP,
+**Progress 2026-07-22:** built — `service/ingress.py` (bolt over HTTP,
 `process_before_response=True` holds invariant 5; a static `authorize`
 replaced bolt's per-dispatch `auth.test`, which was a Slack API call in
 front of the ack; `/healthz` for the ALB), `service/router.py` (routing
@@ -541,16 +541,16 @@ no cross-channel Q&A leak.
 
 ### Acceptance criteria
 
-- [ ] Signature verified; 200 returned after the durable write and before any other I/O
+- [x] Signature verified; 200 returned after the durable write and before any other I/O — B1, 35c6e40f run, 2026-07-22
 - [ ] An enqueue failure returns non-2xx
-- [ ] Upsert uses `DO UPDATE` and always returns an id
-- [ ] Execution input carries only `{incident_id}`
-- [ ] The router makes no Slack post
+- [x] Upsert uses `DO UPDATE` and always returns an id — B1/B2 live + unit-pinned, 35c6e40f run, 2026-07-22
+- [x] Execution input carries only `{incident_id}` — live execution input, 35c6e40f run, 2026-07-22
+- [x] The router makes no Slack post — thread held only poller lines, 35c6e40f run, 2026-07-22
 - [ ] **Kill the router between the upsert and `StartExecution`, and again after it — exactly one investigation in both cases, and none lost**
-- [ ] Two concurrent deliveries of the same `event_id` start exactly one run
+- [x] Two concurrent deliveries of the same `event_id` start exactly one run — Slack delivered twice, one execution (B2, 35c6e40f run, 2026-07-22)
 - [ ] Channel allowlist enforced; rate limit refuses in-thread at the 6th in 10 minutes
-- [ ] Raw envelope logged
-- [ ] Slack app switched to an HTTP Request URL
+- [x] Raw envelope logged — `raw.envelope` on the incident row (B1, 35c6e40f run, 2026-07-22)
+- [x] Slack app switched to an HTTP Request URL — verified + first event flowed, 2026-07-22. Gotcha: the Socket Mode TOGGLE must be off; deleting the app token alone leaves events routed to the dead socket
 
 ### Blocked by
 

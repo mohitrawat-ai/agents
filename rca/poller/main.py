@@ -1,6 +1,6 @@
 """Poller: narrate the record into Slack, and post the terminal message.
 
-New code, 2026-07-23 (issue #10). Replaces slackbot/poster.py's byte-offset
+New code, 2026-07-22 (issue #10). Replaces slackbot/poster.py's byte-offset
 tail and daemon.py's _watch_run for the hosted system; the milestone
 message formats are carried over from poster.py (2026-07-18). Runs as one
 always-on Fargate task — exactly one (P8 §4): two pollers would post every
@@ -44,18 +44,18 @@ from botocore.exceptions import ClientError
 from psycopg.rows import dict_row
 from slack_sdk import WebClient
 
-POLL_S = 30.0  # ruled 2026-07-23: milestones land ~48s apart (P8 §1), 5s bought nothing
+POLL_S = 30.0  # ruled 2026-07-22: milestones land ~48s apart (P8 §1), 5s bought nothing
 
 # StartExecution can lag the incident row by several inbound redeliveries
 # when it is failing (§8a-A: bad IAM, moved ARN). Inside this window a
 # missing execution is a race with the router; after it, a failure to post.
-# A never-started close is irreversible (review 2026-07-23), so the window
+# A never-started close is irreversible (review 2026-07-22), so the window
 # must clear any sane redelivery span; #11 revisits it when the queue's
 # visibility timeout and maxReceiveCount actually exist.
 NEVER_STARTED_GRACE_S = 1800
 
 # Slack rejects chat.postMessage text over 40k chars; an oversize milestone
-# must not wedge the cursor (review 2026-07-23).
+# must not wedge the cursor (review 2026-07-22).
 MAX_POST_CHARS = 39_000
 
 # run.py's exit-code contract (#7), rendered for the terminal message.
@@ -81,7 +81,7 @@ SELECT id, attempt, event, payload
  ORDER BY id
 """
 
-# Scoped to the newest attempt (review 2026-07-23): attempt 1's run_failed
+# Scoped to the newest attempt (review 2026-07-22): attempt 1's run_failed
 # must not label a terminal where attempt 2 died hard and wrote nothing —
 # no row on the last attempt is exactly the hard-death signal (P8 §5).
 LAST_PAYLOAD = """\
@@ -108,7 +108,7 @@ def format_event(event: str, attempt: int, payload: dict) -> str | None:
     moved to the poller (§8a-A) so it rides the cursor's idempotency.
     run_finished stays silent — the terminal message covers it.
 
-    Total by design (review 2026-07-23): emit.py validates that a payload
+    Total by design (review 2026-07-22): emit.py validates that a payload
     is an object, not its field shapes, and a raise here would wedge the
     cursor on the same row every tick, forever. Render what is there.
     """
@@ -182,7 +182,7 @@ def terminal_text(
     # No run_failed row on the last attempt covers two causes run.py cannot
     # tell apart from here: a hard infrastructure death, and a startup
     # failure (exit 2) — most startup paths cannot write a row because the
-    # DB or the incident row is the thing that is broken (review 2026-07-23).
+    # DB or the incident row is the thing that is broken (review 2026-07-22).
     return (
         f"Investigation FAILED for `{slug}` — the task wrote no failure row: "
         f"a hard infrastructure death, or a startup failure (exit 2). "

@@ -8,7 +8,7 @@
 -- incident status; Step Functions stays the authority on whether a run is
 -- over (P8 §5).
 --
--- P9 §5 amendment (ruled 2026-07-23 in-session, issue #10): rca_poller may
+-- P9 §5 amendment (ruled 2026-07-22 in-session, issue #10): rca_poller may
 -- update exactly the columns that record its own actions — the cursor, and
 -- now this marker. Nothing else changes.
 

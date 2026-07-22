@@ -455,7 +455,7 @@ poller() {
 # only; the router gets the service DSN and the bot token. Neither gets
 # partner vars, so entrypoint.sh writes no hb-role profile.
 #
-# The router is essential:false (review 2026-07-23): a router startup
+# The router is essential:false (review 2026-07-22): a router startup
 # failure must not kill the healthy ingress beside it — that would 503
 # the ALB on both replicas and lose alerts, the exact invariant-5
 # failure. A dead router only stops draining the queue; messages wait,
@@ -504,7 +504,7 @@ service_stack() {
     --protocol tcp --port 8000 --source-group "$ALB_SG" 2>/dev/null || true
   log "security groups: alb $ALB_SG, task ingress 8000 from it"
 
-  # Existence guards (review 2026-07-23): elbv2 creates are idempotent
+  # Existence guards (review 2026-07-22): elbv2 creates are idempotent
   # only while every parameter matches; a later parameter change would
   # make a bare create fail the whole run.
   local alb_arn alb_dns tg_arn
@@ -529,7 +529,7 @@ service_stack() {
 
   # The Service below requires the target group to be associated with the
   # ALB, and only a listener creates that association (learned live,
-  # 2026-07-23: CreateService fails with InvalidParameterException on an
+  # 2026-07-22: CreateService fails with InvalidParameterException on an
   # unassociated TG). So no cert -> no listener -> the Service block is
   # skipped too, and lands on the re-run that brings the cert.
   if [[ -z "${RCA_ALB_CERT_ARN:-}" ]]; then

@@ -1,6 +1,6 @@
 """Ingress: verify the Slack signature, enqueue the raw envelope, ack.
 
-New code, 2026-07-23 (issue #11). Replaces daemon.py's Socket Mode
+New code, 2026-07-22 (issue #11). Replaces daemon.py's Socket Mode
 listener with `slack_bolt` over HTTP (Slice 5); the Service's other half,
 the router, consumes what this enqueues.
 
@@ -62,7 +62,7 @@ def build_app(sqs=None) -> App:
 
     @app.event("app_mention")
     def enqueue(body) -> None:
-        # No per-type message attribute (review 2026-07-23): §8a-A's
+        # No per-type message attribute (review 2026-07-22): §8a-A's
         # per-type DLQ mitigation cannot live here — alert-vs-question is
         # decided by the router, after this write. A constant attribute
         # reads as discrimination and delivers none. #13 owns the DLQ

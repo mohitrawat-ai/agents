@@ -1,6 +1,6 @@
 # Live-test ledger — deferred paid verification
 
-Ruled 2026-07-23 (in-session): live acceptance checks that cost a paid run
+Ruled 2026-07-22 (in-session): live acceptance checks that cost a paid run
 or real waiting are **batched**, not run per-issue. Issues land with unit
 tests and this ledger entry; the boxes in `issues.md` stay unticked until
 the batch runs. Rationale: later slices share test attributes (a seeded
@@ -18,6 +18,12 @@ Rules:
 
 ---
 
+> **Status 2026-07-22 (first batch run):** one real tag ran end to end —
+> incident `35c6e40f`, slug `2026-07-22T10-28Z`, SUCCEEDED, 658s / 86
+> turns / $2.37 / 27 queries, same verdict class as the laptop-era run.
+> **Passed: A1, A2, A5, B1, B2.** Open: A3, A4, B3, B4, B5 — next
+> session; A3/B3 need one more paid run, the rest are free.
+
 ## Batch A — poller (#10), runnable now; #11 will extend it
 
 Shared fixture: one seeded incident (`rca/db/seed_incident.py`, per #5)
@@ -25,7 +31,11 @@ whose `channel`/`thread_ts` point at a real thread the bot can post to.
 Runs 1–3 below share **one or two** paid investigations. Run 4 is free
 but takes ~35 minutes of wall-clock.
 
-### A1 — happy path: narration + terminal message
+### A1 — happy path: narration + terminal message — **PASSED 2026-07-22**
+
+Evidence: ack + milestones + verdict in thread (Mohit-read), no tool_call
+lines; terminal "finished … 658s, 86 turns, $2.37 — document is ready.";
+`narrated_through`=386, `terminal_posted_at` set.
 
 1. Seed an incident; note its id.
 2. `StartExecution` (name = incident id, input `{"incident_id": "<id>"}`).
@@ -39,7 +49,10 @@ In the DB: `narrated_through` > 0, `terminal_posted_at` set.
 Ticks #10: cursor narration box, ack box, terminal-from-DescribeExecution
 box (success side).
 
-### A2 — poller restart mid-run: nothing double-posts
+### A2 — poller restart mid-run: nothing double-posts — **PASSED 2026-07-22**
+
+Evidence: forced redeploy mid-run; stop-then-start (never 2 tasks); new
+task resumed from cursor 308; no duplicate ack or milestone in thread.
 
 1. During A1's investigation, force a poller redeploy:
    `aws ecs update-service --profile ingren --region ap-south-1 --cluster rca --service rca-poller --force-new-deployment`
@@ -73,7 +86,10 @@ thread, `terminal_posted_at` set, incident leaves the active set (log
 goes quiet for it).
 Ticks #10: `ExecutionDoesNotExist` box.
 
-### A5 — errors logged, not swallowed (piggybacks on any of the above)
+### A5 — errors logged, not swallowed — **PASSED 2026-07-22** (healthy side)
+
+Evidence: poller streams silent between posts, no tracebacks. The
+loudly-broken side rides A3/B4.
 
 During any run, confirm `/ecs/rca` `poller/*` stream: healthy ticks are
 silent; any failure prints a full traceback with the incident id.
@@ -88,7 +104,12 @@ Slack app switched to the Request URL. B1 is the gate: nothing else runs
 until a real tag flows end to end. B1/B2 can share Batch A's paid run —
 a real tag both exercises the router and produces A1's investigation.
 
-### B1 — end to end: tag → investigation (paid, shared with A1)
+### B1 — end to end: tag → investigation — **PASSED 2026-07-22**
+
+Evidence: two POST /slack/events 200s; "[router] investigation started";
+envelope in `raw.envelope` (the §8a-D sample); execution SUCCEEDED.
+Gotcha found live: Socket Mode toggle had swallowed the first event —
+the toggle must be OFF, deleting the app token is not enough (RUNBOOK).
 
 1. Tag the bot on an alert message in the allowlisted channel.
 2. Watch `service-ingress` and `service-router` log streams.
@@ -100,7 +121,10 @@ narration expectations in the thread.
 Ticks #11: signature verified, durable-write-then-200, upsert returns id,
 input `{incident_id}` only, no router post, raw envelope logged.
 
-### B2 — duplicate delivery: one run only (free, rides B1)
+### B2 — duplicate delivery: one run only — **PASSED 2026-07-22**
+
+Evidence: Slack delivered the mention twice (two 200s in ingress logs);
+exactly one execution on the machine, one started line in router logs.
 
 1. During B1, check Slack's event delivery dashboard for retries; if none
    occurred, redrive one message: copy the B1 envelope from the incident

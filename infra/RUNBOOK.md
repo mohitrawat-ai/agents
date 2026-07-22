@@ -13,8 +13,8 @@ record.
 | Partner AWS access | cross-account role `ingren-rca-readonly` in `356367897942`, assumed with an ExternalId; local profile `hb-role` | pre-existing |
 | Managed Postgres | Neon project, created by Mohit; role DSNs in `rca/.env` | 2026-07-21 |
 | Region ruling | `ap-south-1` (Mumbai) | 2026-07-22 |
-| Domain + cert + 443 listener | `rca.ingren.ai` (Route 53 zone in-account), ACM cert ISSUED, listener live, `/healthz` ok | 2026-07-23 |
-| Slack app switch | Request URL verified, `app_mention` subscribed, `SLACK_APP_TOKEN` deleted, laptop daemon killed | 2026-07-23 |
+| Domain + cert + 443 listener | `rca.ingren.ai` (Route 53 zone in-account), ACM cert ISSUED, listener live, `/healthz` ok | 2026-07-22 |
+| Slack app switch | Request URL verified, `app_mention` subscribed, `SLACK_APP_TOKEN` deleted, laptop daemon killed | 2026-07-22 |
 
 ## Pending
 
@@ -40,6 +40,11 @@ certificate, and the certificate needs a domain. All manual, in order:
    provision.sh. The 443 listener lands on that run.
 
 ## Slack app switch (#11)
+
+**Learned live 2026-07-22:** the Socket Mode TOGGLE (Settings → Socket
+Mode) must be switched OFF. Deleting the app-level token alone leaves
+events routed to the dead socket, and the Request URL silently receives
+nothing.
 
 After the listener answers:
 

@@ -126,7 +126,7 @@ def test_known_thread_routes_to_answer_not_alert():
 
 
 def test_redelivered_alert_redrives_start_not_qa():
-    """Review 2026-07-23, critical: the incident's own envelope redelivering
+    """Review 2026-07-22, critical: the incident's own envelope redelivering
     (same event_id) must converge to StartExecution, never to Q&A — this is
     the crash-between-upsert-and-start window of §8a-A condition 1."""
     conn = FakeConn(known={"id": INCIDENT_ID, "event_id": "Ev1"})

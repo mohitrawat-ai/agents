@@ -54,7 +54,7 @@ def test_unnarrated_kinds_return_none():
 def test_format_event_is_total_on_malformed_payloads():
     """emit.py validates payload shape as 'an object', nothing deeper. A
     raise here would wedge the cursor on the same row forever (review
-    2026-07-23), so garbage must render, not throw."""
+    2026-07-22), so garbage must render, not throw."""
     for payload in ({"qids": 5}, {"qids": True}, {"qids": [1, None]}, {"qids": {}}):
         assert isinstance(format_event("hypothesis", 1, payload), str)
     for event in ("timeline_settled", "self_check", "doc_ready", "run_failed"):

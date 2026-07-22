@@ -1,6 +1,6 @@
 """Router: consume `inbound`, route by thread, upsert + StartExecution.
 
-New code, 2026-07-23 (issue #11). Replaces daemon.py's on_mention handler;
+New code, 2026-07-22 (issue #11). Replaces daemon.py's on_mention handler;
 the thread-anchor and alert-text logic carries over from daemon.py
 (2026-07-18). Runs alongside ingress in the Service task.
 
@@ -161,7 +161,7 @@ def handle(
         return
     if known:
         # Same event_id: this is the ALERT redelivering, not a question
-        # (review 2026-07-23, critical). The routing key (channel,
+        # (review 2026-07-22, critical). The routing key (channel,
         # thread_ts) and the idempotency key (event_id) are different
         # keys — without this gate, a crash or a throttled StartExecution
         # after the upsert commits meant every redelivery matched the
