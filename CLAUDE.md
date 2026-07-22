@@ -75,7 +75,7 @@ convention.
 |---|---|
 | **`docs/design.md`** | what to build, in what order, and the invariants that must not break. **§8a A–F amend or reverse the register — read it first** |
 | **`docs/decision.md`** | **P1–P11** — the *why*, and what each ruling rejected. Six carry a **⚠** marker; **P11 is reversed in full** by §8a-F |
-| **`docs/issues.md`** | the issue backlog for §6's slices. Drafted, not published |
+| **`docs/issues.md`** | the drafted record of §6's issues, frozen at publish. **Current status lives on GitHub — `gh issue list`** (numbers match 1:1) |
 | `ingren-rca/docs/plans/rca-harness/design-v2.md` | **D1–D14** — what the agent *is*. Still authoritative on the investigation itself. Move it here when ingren-rca retires |
 
 `design.md` §4 lists seven invariants. They are the ones that fail *silently* —
