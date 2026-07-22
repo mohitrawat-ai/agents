@@ -24,6 +24,14 @@ Rules:
 > **Passed: A1, A2, A5, B1, B2.** Open: A3, A4, B3, B4, B5 — next
 > session; A3/B3 need one more paid run, the rest are free.
 
+> **Status 2026-07-22 (second batch, free checks):** A4, B4, B5 all
+> **PASSED** — evidence in each section. Only **A3/B3** (one shared paid
+> run, kills at start and mid-run) remain; #10 and #11 close when it runs.
+
+> **Status 2026-07-22 (third batch, paid):** A3 + B3 **PASSED** on one
+> shared run (incident `80d7822d`, ~$3.50 total). **The ledger is clear —
+> all of A1–A5 and B1–B5 have passed.** #10 and #11 closed.
+
 ## Batch A — poller (#10), runnable now; #11 will extend it
 
 Shared fixture: one seeded incident (`rca/db/seed_incident.py`, per #5)
@@ -63,7 +71,15 @@ repeated milestone** (at most one re-posted line if the restart landed
 between a post and its cursor write — acceptable, invariant 6).
 Ticks #10: "ack exactly once across a restart".
 
-### A3 — investigator killed mid-run: restart narrated, terminal still lands
+### A3 — investigator killed mid-run: restart narrated, terminal still lands — **PASSED 2026-07-22**
+
+Evidence: incident `80d7822d`, slug `2026-07-22T12-07Z` (shared with B3).
+`stop-task` mid-attempt-1 (~35 rows in) → "Restarting after an
+infrastructure failure (attempt 2)." in thread; attempt-2 milestones
+(6 hypotheses, timeline, verdict) all `attempt=2` in `events`; terminal
+posted 12:26:47Z, SUCCEEDED, 76 turns / $2.35 / 812s; exactly 2
+`TaskScheduled` in the execution history. The double-kill FAILED side
+was proven in #9's live checks (2026-07-22) and not re-staged.
 
 1. Start a second paid run (or reuse A1's if not yet finished).
 2. Mid-run: `aws ecs stop-task` on the investigator task.
@@ -76,7 +92,11 @@ no-failure-row terminal message (hard death / startup failure wording).
 Ticks #10: "killed task mid-run still produces a terminal message" and
 the exit-code-distinguishing side of the terminal box.
 
-### A4 — never-started: posted failure after grace (free, slow)
+### A4 — never-started: posted failure after grace (free, slow) — **PASSED 2026-07-22**
+
+Evidence: seeded `live-test-a4` (`c420e2f1`) at 11:27:30Z, no execution;
+never-started post in thread and `terminal_posted_at` 11:57:42Z (+30m12s);
+poller stream silent throughout — the close makes no log line by design.
 
 1. Seed an incident. Start **nothing**.
 2. Wait out `NEVER_STARTED_GRACE_S` (30 min).
@@ -136,7 +156,16 @@ same id and `StartExecution` no-ops. Either way: exactly one execution
 on the machine.
 Ticks #11: two deliveries of the same `event_id` start exactly one run.
 
-### B3 — kill the router around StartExecution (paid, one run)
+### B3 — kill the router around StartExecution (paid, one run) — **PASSED 2026-07-22**
+
+Evidence: incident `80d7822d` (shared with A3). Tag → kill the (single)
+Service task seconds later; router had already won the race
+(`investigation started` 12:07:45, kill landed after) — one row, one
+execution, alert survived. The redelivery half was then forced: envelope
+redriven onto `rca-inbound` (B2 pattern) at 12:09; new router converged
+via the `event_id` gate → idempotent re-start, still exactly one
+execution and one row. Both §8a-A halves exercised. Note: service ran
+desired-count 1, not the handoff's 2.
 
 1. Seed nothing. Tag the bot on a fresh alert.
 2. Within the router's processing window, `aws ecs stop-task` both
@@ -147,7 +176,13 @@ Expect: exactly one incident row, exactly one execution, alert not lost.
 This is the §8a-A crash-convergence table, live.
 Ticks #11: the kill-router acceptance box, both halves.
 
-### B4 — enqueue failure returns non-2xx (free)
+### B4 — enqueue failure returns non-2xx (free) — **PASSED 2026-07-22**
+
+Evidence: deny policy on `rca-service` at 11:30Z; tag in the known
+incident thread (so the redelivery routes as a free question, not a paid
+run) → two 500s at 11:31:37/38 with the `AccessDenied` traceback logged
+in full; deny removed; Slack's +1 min retry got a 200 at 11:32:39 and
+posted the Q&A stub. No new incident row, no new execution.
 
 1. Temporarily deny `sqs:SendMessage` on role `rca-service` (or scale the
    queue's policy); tag the bot.
@@ -157,7 +192,14 @@ Expect: Slack dashboard shows non-2xx + retries; no lost alert once
 restored; ingress logs the failure loudly.
 Ticks #11: an enqueue failure returns non-2xx.
 
-### B5 — allowlist and rate limit (free)
+### B5 — allowlist and rate limit (free) — **PASSED 2026-07-22**
+
+Evidence: (1) two tags in non-allowlisted `C0BJXJD4UBF` → two loud drop
+lines in router logs, silence in-thread, zero incident rows. (2) 5 owner
+seed rows (`b5-seed-%`, seeded WITH `terminal_posted_at` set so the
+poller never sees them — removes the 30-min deletion deadline) → tag at
+11:38:54Z got the in-thread refusal; no row, no 6th execution. Seed rows
+deleted after verification.
 
 1. Invite the bot to a non-allowlisted channel; tag it. Expect: silence
    in-thread, loud "not allowlisted" drop in router logs, no incident.

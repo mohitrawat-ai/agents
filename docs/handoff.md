@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-22 (evening)
+# Session handoff — 2026-07-22 (night)
 
 Continue building the hosted RCA agent in `/Users/mohitrawat/projects/ingren/prod/agents`.
 Python, canonical tree, deployed in place. Mohit fully understands every line —
@@ -14,9 +14,9 @@ deliberately slower is correct.
 
 ## State (as of this session's commits)
 
-- **Closed:** #1–#2, #4–#9, #16, and now **#6** (Slack app switched).
-  **#10 and #11 are built, reviewed, deployed, and partially
-  live-verified** — open only for their remaining live checks.
+- **Closed:** #1–#2, #4–#11, #16. **#10 and #11 closed 2026-07-22 —
+  the live-test ledger is clear, all of A1–A5 and B1–B5 passed.**
+  Open: #12, #13, #15 (tracker).
 - **THE SYSTEM IS LIVE, END TO END.** `rca.ingren.ai` → ALB → ingress →
   SQS → router → Step Functions → investigator → Postgres → poller →
   thread. First fully-hosted tag ran 2026-07-22: incident `35c6e40f`,
@@ -37,20 +37,24 @@ deliberately slower is correct.
   #11 critical find (redelivered alert routed as a question — routing key
   vs idempotency key) is fixed with an `event_id` gate + pinning test.
 
-## Open live checks — run these FIRST next session
+## Live checks — ALL PASSED 2026-07-22
 
-`docs/live-tests.md` has full steps + evidence bars. Passed already:
-A1, A2, A5, B1, B2. Open:
+`docs/live-tests.md` holds the evidence per check. A4/B4/B5 ran free;
+A3/B3 shared one paid run (incident `80d7822d`, ~$3.50 — attempt 1
+killed mid-run, attempt 2 SUCCEEDED at 76 turns / $2.35 / 812s).
+Notables:
 
-- **A3/B3** (one more paid run, ~$2): kill investigator mid-run (attempt-2
-  narration + terminal), and kill both Service tasks around
-  `StartExecution` (§8a-A convergence, live).
-- **A4** (free, 30 min): seeded row, no execution → never-started post.
-- **B4** (free): temporary SQS deny → ingress must return non-2xx.
-- **B5** (free): non-allowlisted channel drop; rate-limit refusal at the
-  6th in 10 min (seed 5 rows, then delete them).
-
-When these pass, #10 and #11 close fully.
+- B3's mid-processing kill is not hand-timeable; the redelivery half was
+  forced by redriving the saved envelope (B2 pattern) — the `event_id`
+  gate converged it. Ledger records the method.
+- B4's tag went in the KNOWN incident thread so the post-restore
+  redelivery routed as a free question, not a paid run.
+- B5 seeds carried `terminal_posted_at` at insert — the poller never
+  sees them, so no deletion deadline. Rows since deleted.
+- `rca-service` runs desired-count **1**, not 2 as the previous handoff
+  said. Worth a deliberate ruling when #13 lands.
+- Poller's never-started close is silent in logs by design — evidence
+  is the Slack post + `terminal_posted_at`, not a log line.
 
 ## Next build: #12 (Q&A), then #13
 
@@ -101,5 +105,6 @@ Short sentences, one fact each, active voice, lists over paragraphs.
 ---
 
 Start by reading the docs above, confirm state (`git log --oneline -5`,
-76 tests from `rca/`), run the open live checks with Mohit, then begin #12
-at the `answer` seam.
+76 tests from `rca/`), then begin #12 at the `answer` seam — read
+design.md §8a-C first. #13 follows; #15's remaining boxes (idempotent
+re-run of the provision scripts, account audit) close at #13.
