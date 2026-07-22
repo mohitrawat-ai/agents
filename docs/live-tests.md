@@ -81,10 +81,62 @@ Ticks #10: "errors logged, not swallowed".
 
 ---
 
-## Batch B — reserved for #11 (ingress/router)
+## Batch B — ingress and router (#11)
 
-Lands with #11's code. Known members, from its acceptance list: the
-kill-between-upsert-and-StartExecution pair, duplicate `event_id`
-deliveries, rate-limit refusal, raw-envelope capture. The router kill
-tests reuse Batch A's seeded-thread fixture and can share Batch A's paid
-runs if staged in the same session.
+Prereqs: image pushed with `service/`, provision run, 443 listener live,
+Slack app switched to the Request URL. B1 is the gate: nothing else runs
+until a real tag flows end to end. B1/B2 can share Batch A's paid run —
+a real tag both exercises the router and produces A1's investigation.
+
+### B1 — end to end: tag → investigation (paid, shared with A1)
+
+1. Tag the bot on an alert message in the allowlisted channel.
+2. Watch `service-ingress` and `service-router` log streams.
+
+Expect: ingress 200 in Slack's dashboard (no retries); router logs
+"investigation started"; incident row exists with `raw.envelope` set —
+**the §8a-D sample, save it**; execution running; then Batch A1's
+narration expectations in the thread.
+Ticks #11: signature verified, durable-write-then-200, upsert returns id,
+input `{incident_id}` only, no router post, raw envelope logged.
+
+### B2 — duplicate delivery: one run only (free, rides B1)
+
+1. During B1, check Slack's event delivery dashboard for retries; if none
+   occurred, redrive one message: copy the B1 envelope from the incident
+   row and `aws sqs send-message` it onto `rca-inbound` again.
+
+Expect: router routes it as a question now (thread is known) — or, if
+replayed before the upsert commits, the `event_id` conflict returns the
+same id and `StartExecution` no-ops. Either way: exactly one execution
+on the machine.
+Ticks #11: two deliveries of the same `event_id` start exactly one run.
+
+### B3 — kill the router around StartExecution (paid, one run)
+
+1. Seed nothing. Tag the bot on a fresh alert.
+2. Within the router's processing window, `aws ecs stop-task` both
+   Service tasks (kills router mid-message; SQS redelivers at +60s).
+3. ECS restarts the tasks; the message redelivers.
+
+Expect: exactly one incident row, exactly one execution, alert not lost.
+This is the §8a-A crash-convergence table, live.
+Ticks #11: the kill-router acceptance box, both halves.
+
+### B4 — enqueue failure returns non-2xx (free)
+
+1. Temporarily deny `sqs:SendMessage` on role `rca-service` (or scale the
+   queue's policy); tag the bot.
+2. Restore afterwards.
+
+Expect: Slack dashboard shows non-2xx + retries; no lost alert once
+restored; ingress logs the failure loudly.
+Ticks #11: an enqueue failure returns non-2xx.
+
+### B5 — allowlist and rate limit (free)
+
+1. Invite the bot to a non-allowlisted channel; tag it. Expect: silence
+   in-thread, loud "not allowlisted" drop in router logs, no incident.
+2. Seed 5 incident rows dated now (owner SQL), then tag a real alert.
+   Expect: in-thread refusal, no 6th execution. Delete the seed rows.
+Ticks #11: channel allowlist; rate limit refuses at the 6th.

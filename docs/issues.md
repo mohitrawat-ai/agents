@@ -233,7 +233,7 @@ investigation task, so a compromised investigation cannot speak as the bot.
       #9's Dockerfile: COPY is an allowlist; `find /app /home /root -name
       '.env*'` in the built image returns nothing
 - [x] Per-task scoping matches P9 §4, including `SLACK_BOT_TOKEN` absent from the investigation task — 2026-07-22: `rca-investigator` task def carries 8 secrets, no bot token; verified live
-- [ ] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — **pending: Slack app switches in #11**
+- [x] `SLACK_APP_TOKEN` deleted; `SLACK_SIGNING_SECRET` added — 2026-07-23, with #11's app switch; secret in SSM, Request URL verified. **#6 fully closed**
 - [x] Local dev still runs via an external env file (`uv run --env-file .env`; `--mock` runs with no env at all)
 
 **Code half closed 2026-07-21** (loaders). The three pending criteria are
@@ -510,6 +510,34 @@ any threshold between them works and the number never needs tuning.
 **Log the raw Slack envelope of the first real alert.** There are zero samples
 of an alert as a Slack message, and that is the only form `parse_alert` will
 ever see. Costs nothing beyond the write, and it is what unblocks dedup later.
+
+**Progress 2026-07-23:** built — `service/ingress.py` (bolt over HTTP,
+`process_before_response=True` holds invariant 5; a static `authorize`
+replaced bolt's per-dispatch `auth.test`, which was a Slack API call in
+front of the ack; `/healthz` for the ALB), `service/router.py` (routing
+by thread; the three §8a-A conditions, each pinned by a unit test; Q&A
+behind an `answer` seam for #12; posts only on ruled dead ends),
+`queues()` + `service_stack()` in provision.sh (one queue + DLQ,
+visibility 60s x 5 receives ≈ 5 min to DLQ, inside the poller's 30-min
+grace; 2-container task def with per-container secrets; ALB with
+cert-gated 443 listener). Bolt kept over a hand-rolled verifier (ruled
+in-session: tested framework beats ~80 explicit lines; rejected
+alternative recorded). 15 unit tests. Slack app switch + cert/DNS are
+RUNBOOK manual steps. Live checks are `live-tests.md` Batch B (B1–B5).
+Three-Opus review, four findings fixed: **critical — the thread lookup
+intercepted a redelivered alert as a question** (routing key `(channel,
+thread_ts)` vs idempotency key `event_id`; a crash or throttled
+`StartExecution` after the upsert meant the run never started; found
+independently by two reviewers; fixed with an `event_id` gate that
+re-drives the idempotent start, plus a pinning test); router container
+made `essential:false` (its startup failure must not 503 the ingress
+ack path on both replicas); existence guards on the elbv2 creates
+(re-run safety when parameters change); the constant per-type DLQ
+attribute removed (§8a-A's per-type alarm cannot be discriminated at
+ingress — the DLQ alarm story moves to #13). Confirmed clean by review:
+signature/replay handling, secret scoping per container, no-post happy
+path, allowlist-before-everything, rate-limit-at-6th, no SQL injection,
+no cross-channel Q&A leak.
 
 ### Acceptance criteria
 

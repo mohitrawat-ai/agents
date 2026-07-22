@@ -72,6 +72,11 @@ ssm_parameters() {
   put_param /rca/partner-aws/role-arn "$arn"
   put_param /rca/partner-aws/external-id "$xid"
 
+  # Slack signing secret lands with #11's app switch; push when present.
+  if [[ -n "${SLACK_SIGNING_SECRET:-}" ]]; then
+    put_param /rca/slack/signing-secret "$SLACK_SIGNING_SECRET"
+  fi
+
   # Langfuse mirror is optional (§8c): push only what exists locally.
   if [[ -n "${LANGFUSE_PUBLIC_KEY:-}" ]]; then
     put_param /rca/langfuse/public-key "$LANGFUSE_PUBLIC_KEY"
@@ -319,6 +324,43 @@ EOF
   log "state machine rca-investigation"
 }
 
+# --- Inbound queue + DLQ (#11, §8a-A) ----------------------------------------
+# ONE queue. Raw Slack envelopes in; the router consumes and calls
+# StartExecution directly — §8a-A dropped the second queue. Standard, not
+# FIFO: ordering is not needed (the event_id guard and execution-name
+# idempotency absorb duplicates), and FIFO throughput limits buy nothing.
+#
+# Redelivery math is load-bearing for the poller's never-started grace
+# (poller/main.py, 1800s): visibility 60s x maxReceiveCount 5 means a
+# persistently failing StartExecution exhausts to the DLQ in ~5 minutes,
+# comfortably inside the grace window. Change either number and re-check
+# that inequality.
+#
+# Long polling (ReceiveMessageWaitTimeSeconds 20) so the router's receive
+# loop is cheap. Retention 4 days on both: enough to notice and redrive a
+# DLQ'd alert after a weekend.
+
+queues() {
+  local dlq_url dlq_arn q_url
+  "${AWS[@]}" sqs create-queue --queue-name rca-inbound-dlq \
+    --attributes '{"MessageRetentionPeriod": "345600"}' >/dev/null
+  dlq_url=$("${AWS[@]}" sqs get-queue-url --queue-name rca-inbound-dlq \
+    --query QueueUrl --output text)
+  dlq_arn=$("${AWS[@]}" sqs get-queue-attributes --queue-url "$dlq_url" \
+    --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+  log "queue rca-inbound-dlq"
+
+  "${AWS[@]}" sqs create-queue --queue-name rca-inbound --attributes '{
+      "MessageRetentionPeriod": "345600",
+      "VisibilityTimeout": "60",
+      "ReceiveMessageWaitTimeSeconds": "20",
+      "RedrivePolicy": "{\"deadLetterTargetArn\":\"'"$dlq_arn"'\",\"maxReceiveCount\":\"5\"}"
+    }' >/dev/null
+  q_url=$("${AWS[@]}" sqs get-queue-url --queue-name rca-inbound \
+    --query QueueUrl --output text)
+  log "queue rca-inbound ($q_url)"
+}
+
 # --- Poller: role, task definition, Service (#10) ---------------------------
 # One always-on task: narrates events rows, posts the terminal message.
 # Secret scoping (P9 §4): poller DSN + bot token, nothing else. No partner
@@ -400,6 +442,190 @@ poller() {
   log "service rca-poller (desired 1)"
 }
 
+# --- Service: ingress + router, ALB (#11) ------------------------------------
+# One task definition, two containers, both from the same image:
+#   ingress — uvicorn serving service.ingress:asgi on 8000. Verifies the
+#             Slack signature, enqueues, returns 200. ALB targets it.
+#   router  — python -m service.router. Consumes rca-inbound, upserts,
+#             StartExecution. No inbound traffic.
+# Two tasks, always warm (design §3). Two routers racing is safe by
+# §8a-A's table; two ingresses is the point of the ALB.
+#
+# Secret scoping per container (P9 §4): ingress gets the signing secret
+# only; the router gets the service DSN and the bot token. Neither gets
+# partner vars, so entrypoint.sh writes no hb-role profile.
+#
+# The router is essential:false (review 2026-07-23): a router startup
+# failure must not kill the healthy ingress beside it — that would 503
+# the ALB on both replicas and lose alerts, the exact invariant-5
+# failure. A dead router only stops draining the queue; messages wait,
+# then DLQ.
+#
+# HTTPS is Slack's requirement, so the listener needs an ACM cert. Cert
+# issuance and DNS are manual (RUNBOOK); until RCA_ALB_CERT_ARN is set
+# the stack lands listener-less and the script says so.
+
+SERVICE_QUEUE_URL="https://sqs.${RCA_REGION}.amazonaws.com/${ACCOUNT_ID}/rca-inbound"
+
+service_stack() {
+  require RCA_CHANNEL_ALLOWLIST
+  local ecs_trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+
+  "${AWS[@]}" iam get-role --role-name rca-service >/dev/null 2>&1 \
+    || "${AWS[@]}" iam create-role --role-name rca-service \
+         --assume-role-policy-document "$ecs_trust" >/dev/null
+  "${AWS[@]}" iam put-role-policy --role-name rca-service \
+    --policy-name inbound-and-start --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+        {"Effect": "Allow",
+         "Action": ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage"],
+         "Resource": "arn:aws:sqs:'"$RCA_REGION"':'"$ACCOUNT_ID"':rca-inbound"},
+        {"Effect": "Allow",
+         "Action": "states:StartExecution",
+         "Resource": "arn:aws:states:'"$RCA_REGION"':'"$ACCOUNT_ID"':stateMachine:rca-investigation"}
+      ]}'
+  log "iam role rca-service"
+
+  # ALB security group: 443 from anywhere (Slack publishes no stable IPs);
+  # the task SG accepts 8000 from the ALB SG only. Duplicate-rule errors on
+  # re-run are expected and tolerated.
+  ALB_SG=$("${AWS[@]}" ec2 describe-security-groups \
+    --filters Name=group-name,Values=rca-alb "Name=vpc-id,Values=$VPC_ID" \
+    --query 'SecurityGroups[0].GroupId' --output text)
+  if [[ "$ALB_SG" == "None" ]]; then
+    ALB_SG=$("${AWS[@]}" ec2 create-security-group --group-name rca-alb \
+      --description "rca ALB: 443 from anywhere" \
+      --vpc-id "$VPC_ID" --query GroupId --output text)
+  fi
+  "${AWS[@]}" ec2 authorize-security-group-ingress --group-id "$ALB_SG" \
+    --protocol tcp --port 443 --cidr 0.0.0.0/0 2>/dev/null || true
+  "${AWS[@]}" ec2 authorize-security-group-ingress --group-id "$SG_ID" \
+    --protocol tcp --port 8000 --source-group "$ALB_SG" 2>/dev/null || true
+  log "security groups: alb $ALB_SG, task ingress 8000 from it"
+
+  # Existence guards (review 2026-07-23): elbv2 creates are idempotent
+  # only while every parameter matches; a later parameter change would
+  # make a bare create fail the whole run.
+  local alb_arn alb_dns tg_arn
+  if ! alb_arn=$("${AWS[@]}" elbv2 describe-load-balancers --names rca \
+      --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null); then
+    alb_arn=$("${AWS[@]}" elbv2 create-load-balancer --name rca \
+      --type application --scheme internet-facing \
+      --subnets $SUBNET_IDS --security-groups "$ALB_SG" \
+      --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+  fi
+  alb_dns=$("${AWS[@]}" elbv2 describe-load-balancers \
+    --load-balancer-arns "$alb_arn" \
+    --query 'LoadBalancers[0].DNSName' --output text)
+  if ! tg_arn=$("${AWS[@]}" elbv2 describe-target-groups --names rca-ingress \
+      --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null); then
+    tg_arn=$("${AWS[@]}" elbv2 create-target-group --name rca-ingress \
+      --protocol HTTP --port 8000 --vpc-id "$VPC_ID" --target-type ip \
+      --health-check-path /healthz --matcher HttpCode=200 \
+      --query 'TargetGroups[0].TargetGroupArn' --output text)
+  fi
+  log "alb rca ($alb_dns), target group rca-ingress"
+
+  # The Service below requires the target group to be associated with the
+  # ALB, and only a listener creates that association (learned live,
+  # 2026-07-23: CreateService fails with InvalidParameterException on an
+  # unassociated TG). So no cert -> no listener -> the Service block is
+  # skipped too, and lands on the re-run that brings the cert.
+  if [[ -z "${RCA_ALB_CERT_ARN:-}" ]]; then
+    log "NO 443 LISTENER and NO SERVICE yet: set RCA_ALB_CERT_ARN once the"
+    log "cert exists (RUNBOOK) and re-run; both land on that run"
+    return 0
+  fi
+  local have_listener
+  have_listener=$("${AWS[@]}" elbv2 describe-listeners \
+    --load-balancer-arn "$alb_arn" \
+    --query 'Listeners[?Port==`443`] | length(@)' --output text)
+  if [[ "$have_listener" == "0" ]]; then
+    "${AWS[@]}" elbv2 create-listener --load-balancer-arn "$alb_arn" \
+      --protocol HTTPS --port 443 --certificates "CertificateArn=$RCA_ALB_CERT_ARN" \
+      --default-actions "Type=forward,TargetGroupArn=$tg_arn" >/dev/null
+  fi
+  log "listener 443 (cert set)"
+
+  local p="arn:aws:ssm:${RCA_REGION}:${ACCOUNT_ID}:parameter/rca"
+  "${AWS[@]}" ecs register-task-definition --cli-input-json '{
+    "family": "rca-service",
+    "requiresCompatibilities": ["FARGATE"],
+    "networkMode": "awsvpc",
+    "cpu": "512",
+    "memory": "1024",
+    "runtimePlatform": {"cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX"},
+    "executionRoleArn": "arn:aws:iam::'"$ACCOUNT_ID"':role/rca-task-execution",
+    "taskRoleArn": "arn:aws:iam::'"$ACCOUNT_ID"':role/rca-service",
+    "containerDefinitions": [
+      {
+        "name": "ingress",
+        "image": "'"$ECR_URI"':latest",
+        "essential": true,
+        "command": ["uvicorn", "--factory", "service.ingress:asgi",
+                    "--host", "0.0.0.0", "--port", "8000"],
+        "portMappings": [{"containerPort": 8000, "protocol": "tcp"}],
+        "environment": [
+          {"name": "RCA_INBOUND_QUEUE_URL", "value": "'"$SERVICE_QUEUE_URL"'"}
+        ],
+        "secrets": [
+          {"name": "SLACK_SIGNING_SECRET", "valueFrom": "'"$p"'/slack/signing-secret"}
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/rca",
+            "awslogs-region": "'"$RCA_REGION"'",
+            "awslogs-stream-prefix": "service-ingress"
+          }
+        }
+      },
+      {
+        "name": "router",
+        "image": "'"$ECR_URI"':latest",
+        "essential": false,
+        "command": ["python", "-m", "service.router"],
+        "environment": [
+          {"name": "RCA_INBOUND_QUEUE_URL", "value": "'"$SERVICE_QUEUE_URL"'"},
+          {"name": "RCA_STATE_MACHINE_ARN",
+           "value": "arn:aws:states:'"$RCA_REGION"':'"$ACCOUNT_ID"':stateMachine:rca-investigation"},
+          {"name": "RCA_CHANNEL_ALLOWLIST", "value": "'"$RCA_CHANNEL_ALLOWLIST"'"}
+        ],
+        "secrets": [
+          {"name": "RCA_DATABASE_URL", "valueFrom": "'"$p"'/db/service-url"},
+          {"name": "SLACK_BOT_TOKEN",  "valueFrom": "'"$p"'/slack/bot-token"}
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/rca",
+            "awslogs-region": "'"$RCA_REGION"'",
+            "awslogs-stream-prefix": "service-router"
+          }
+        }
+      }
+    ]
+  }' >/dev/null
+  log "task definition rca-service (2 containers)"
+
+  local subnets_csv
+  subnets_csv=$(printf '%s,' $SUBNET_IDS); subnets_csv=${subnets_csv%,}
+  if "${AWS[@]}" ecs describe-services --cluster "$CLUSTER" --services rca-service \
+       --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+    "${AWS[@]}" ecs update-service --cluster "$CLUSTER" --service rca-service \
+      --task-definition rca-service >/dev/null
+  else
+    "${AWS[@]}" ecs create-service --cluster "$CLUSTER" --service-name rca-service \
+      --task-definition rca-service --desired-count 2 --launch-type FARGATE \
+      --network-configuration "awsvpcConfiguration={subnets=[$subnets_csv],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+      --load-balancers "targetGroupArn=$tg_arn,containerName=ingress,containerPort=8000" \
+      --health-check-grace-period-seconds 60 \
+      >/dev/null
+  fi
+  log "service rca-service (desired 2, behind alb)"
+}
+
 # Hard gate: wrong profile or region must stop the script, not scroll past.
 account=$("${AWS[@]}" sts get-caller-identity --query Account --output text)
 [[ "$account" == "$ACCOUNT_ID" ]] || {
@@ -414,4 +640,6 @@ network
 task_definition
 state_machine
 poller
+queues
+service_stack
 log "done"

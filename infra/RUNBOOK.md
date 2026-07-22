@@ -13,13 +13,45 @@ record.
 | Partner AWS access | cross-account role `ingren-rca-readonly` in `356367897942`, assumed with an ExternalId; local profile `hb-role` | pre-existing |
 | Managed Postgres | Neon project, created by Mohit; role DSNs in `rca/.env` | 2026-07-21 |
 | Region ruling | `ap-south-1` (Mumbai) | 2026-07-22 |
+| Domain + cert + 443 listener | `rca.ingren.ai` (Route 53 zone in-account), ACM cert ISSUED, listener live, `/healthz` ok | 2026-07-23 |
+| Slack app switch | Request URL verified, `app_mention` subscribed, `SLACK_APP_TOKEN` deleted, laptop daemon killed | 2026-07-23 |
 
 ## Pending
 
 | Step | Lands with |
 |---|---|
-| Slack app: delete `SLACK_APP_TOKEN`, add `SLACK_SIGNING_SECRET`, switch to HTTP Request URL | #11 |
 | SNS alarm subscription (email/phone confirm) | #13 |
+
+## HTTPS for the ingress (#11)
+
+Slack requires an HTTPS Request URL, so the ALB listener needs an ACM
+certificate, and the certificate needs a domain. All manual, in order:
+
+1. Pick a hostname you control, e.g. `rca.<your-domain>`.
+2. Request the cert (must be in ap-south-1, same region as the ALB):
+
+       aws acm request-certificate --profile ingren --region ap-south-1 \
+         --domain-name rca.<your-domain> --validation-method DNS
+
+3. Add the DNS validation CNAME that ACM prints to your DNS. Wait for
+   `ISSUED` (`aws acm describe-certificate`).
+4. CNAME `rca.<your-domain>` to the ALB DNS name (provision.sh prints it).
+5. Put the cert ARN in `rca/.env` as `RCA_ALB_CERT_ARN`, re-run
+   provision.sh. The 443 listener lands on that run.
+
+## Slack app switch (#11)
+
+After the listener answers:
+
+1. In the Slack app config, copy the Signing Secret; add it to `rca/.env`
+   as `SLACK_SIGNING_SECRET`; re-run provision.sh (lands in SSM).
+2. Event Subscriptions -> Request URL:
+   `https://rca.<your-domain>/slack/events`. Slack sends the
+   `url_verification` challenge; ingress echoes it.
+3. Subscribed bot events: `app_mention` only.
+4. Delete the `SLACK_APP_TOKEN` (Socket Mode is gone). Closes #6's last
+   box.
+5. Stop the laptop daemon for good: `pkill -f daemon.py`.
 
 ## Image build and push (#9)
 
