@@ -170,3 +170,39 @@ def test_incident_flag_is_ignored(owner, capsys):
         assert "ignored" in captured.err
     finally:
         owner.execute("DELETE FROM incidents WHERE id = %s", (other,))
+
+
+# --- last_failed_exit_code: the §8e retry guard's read -----------------------
+
+
+@pytest.mark.usefixtures("incident")
+def test_guard_reads_prior_policy_stop(monkeypatch):
+    """Attempt 1 recorded a budget stop; the guard read (as rca_agent, on
+    attempt 2) must see exit code 4."""
+    with db.connect() as conn:
+        db.insert_event(conn, "run_failed", {"reason": "budget", "exit_code": 4})
+    monkeypatch.setenv("ATTEMPT", "2")
+    with db.connect() as conn:
+        assert db.last_failed_exit_code(conn, 1) == 4
+
+
+@pytest.mark.usefixtures("incident")
+def test_guard_sees_nothing_after_hard_death(monkeypatch):
+    """A hard death writes no run_failed row: the guard returns None and the
+    restart proceeds — §8e's infra tier."""
+    monkeypatch.setenv("ATTEMPT", "2")
+    with db.connect() as conn:
+        assert db.last_failed_exit_code(conn, 1) is None
+
+
+@pytest.mark.usefixtures("incident")
+def test_guard_ignores_other_events_and_attempts(monkeypatch):
+    """Only run_failed rows of the asked attempt count."""
+    with db.connect() as conn:
+        db.insert_event(conn, "run_started", {"model": "x"})
+    monkeypatch.setenv("ATTEMPT", "2")
+    with db.connect() as conn:
+        db.insert_event(conn, "run_failed", {"reason": "wall", "exit_code": 3})
+    with db.connect() as conn:
+        assert db.last_failed_exit_code(conn, 1) is None
+        assert db.last_failed_exit_code(conn, 2) == 3

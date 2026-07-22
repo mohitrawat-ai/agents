@@ -161,6 +161,19 @@ def main() -> int:
     try:
         incident_id, attempt = db.scope()
         with db.connect() as conn:
+            # Retry guard (§8e): the state machine retries States.TaskFailed
+            # blind, so a re-run of a policy stop is refused here, pre-spend.
+            # A hard death wrote no run_failed row -> proceed: that is the
+            # infra-tier restart working as ruled.
+            if attempt > 1:
+                prior = db.last_failed_exit_code(conn, attempt - 1)
+                if prior in (EXIT_AGENT_ERROR, EXIT_BUDGET):
+                    print(
+                        f"attempt {attempt - 1} recorded policy stop"
+                        f" (exit {prior}); refusing to re-run",
+                        file=sys.stderr,
+                    )
+                    return prior
             slug, raw = db.get_incident(conn)
     except SystemExit as e:
         print(f"startup: {e}", file=sys.stderr)

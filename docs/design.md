@@ -901,6 +901,39 @@ commit.
 - `instrument_note` joins `tool_call` on the not-narrated side of §5's
   events table.
 
+### 8e. The task guards its own retry — ruled 2026-07-22 (issue #9)
+
+**The gap this closes:** §8a-B says "a `Retry` block, per failure class,
+feeding off #7's exit codes." Step Functions cannot do that literally. A
+`Retry` block matches the error *name*, and every task failure is
+`States.TaskFailed`; the exit code sits inside the `Cause` string, which
+`Retry` cannot read. A hard task death (host loss, spot reclaim) has no
+exit code at all and must retry.
+
+**Ruled: the machine retries blind; the task refuses wrong re-runs.** The
+state machine keeps one `Retry` on `States.TaskFailed`, capped at 1 retry
+(2 attempts). On attempt > 1, `run.py` first reads the previous attempt's
+`run_failed` row. If it recorded a policy stop — exit 1 (agent error) or 4
+(budget) — the task exits immediately with that same code, before any LLM
+spend. No row found means a hard death: proceed, which is exactly the
+infra-tier retry. The policy lives where the codes already live.
+
+**Cost accepted:** a poison or budget-stopped run gets one pointless
+container relaunch lasting seconds and costing cents. "Never retried"
+holds in substance — no second investigation, no second $2.
+
+**Rejected:**
+
+- *Machine parses the `Cause`* — `Catch` → `States.StringToJson` →
+  `Choice` → loop with a hand-managed counter. Rebuilds `Retry` by hand,
+  needs the no-exit-code path spelled out, and the policy lands in ASL,
+  the language no one here debugs well.
+- *Lambda classifier between SFN and the task* — a third runtime and a
+  deploy artifact for an if-statement.
+
+**Consequence:** `rca_agent` gains `SELECT` on `events`, wrapper-scoped to
+its own incident like its `queries` read (P9 §5 re-ruling). Migration 003.
+
 ---
 
 ## 9. Reading order for a fresh session

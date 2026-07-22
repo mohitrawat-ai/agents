@@ -109,6 +109,23 @@ def get_incident(conn: psycopg.Connection) -> tuple[str, dict]:
     return row[0], row[1]
 
 
+def last_failed_exit_code(conn: psycopg.Connection, attempt: int) -> int | None:
+    """Return the exit_code of the newest run_failed row for the given
+    attempt of the environment's incident, or None if that attempt wrote
+    none. The retry guard (§8e): a policy stop recorded there must not be
+    re-run; a hard death wrote no row and must be."""
+    incident_id, _ = scope()
+    row = conn.execute(
+        "SELECT payload->>'exit_code' FROM events"
+        " WHERE incident_id = %s AND attempt = %s AND event = 'run_failed'"
+        " ORDER BY id DESC LIMIT 1",
+        (incident_id, attempt),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
 def insert_event(conn: psycopg.Connection, event: str, payload: dict) -> None:
     incident_id, attempt = scope()
     conn.execute(_INSERT_EVENT, (incident_id, attempt, event, Jsonb(payload)))

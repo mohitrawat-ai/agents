@@ -353,12 +353,17 @@ for 90 days (P4 §6). **Execution input is `{incident_id}` and nothing else** �
 name-based idempotency holds only on identical input, and a differing payload
 raises `ExecutionAlreadyExists` instead of succeeding quietly (§8a-A).
 
-Per-failure-class retriers, feeding off #7's exit codes:
+Per-failure-class retriers, feeding off #7's exit codes — **mechanism ruled
+2026-07-22, §8e: the machine retries `States.TaskFailed` blind (1 retry);
+the task guards itself.** On attempt > 1, `run.py` reads the previous
+attempt's `run_failed` row and refuses to re-run policy stops (exit 1, 4)
+by exiting with the same code, pre-spend. No row = hard death = proceed.
 
-- **Infrastructure tier** — auto-**restart**, capped at 2 attempts (§8a-B). A
-  `Retry` block. **No resume state, no `SessionStore`, no S3.**
+- **Infrastructure tier** — auto-**restart**, capped at 2 attempts (§8a-B).
+  **No resume state, no `SessionStore`, no S3.**
 - **Everything else** stops and posts. Budget breach is a policy stop and is
-  never retried. Poison `alert.json` is never retried.
+  never re-investigated. Poison `alert.json` is never re-investigated. (Each
+  gets one no-op relaunch, seconds and cents — §8e's accepted cost.)
 
 A restart increments `attempt`, so its second set of evidence rows stays
 distinguishable from the first.

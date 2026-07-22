@@ -198,8 +198,10 @@ def test_agent_cannot_insert_incidents(agent):
     denied(agent, INSERT_INCIDENT, (f"ev-{uuid.uuid4()}",))
 
 
-def test_agent_cannot_read_events_or_documents(agent):
-    denied(agent, "SELECT event FROM events")
+def test_agent_reads_events_but_not_documents(agent):
+    """Migration 003 (§8e): the retry guard reads run_failed rows, so
+    events became SELECTable. Documents stay closed."""
+    agent.execute("SELECT event FROM events LIMIT 1")
     denied(agent, "SELECT name FROM documents")
 
 
