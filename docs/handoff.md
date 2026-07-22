@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-22 (night)
+# Session handoff — 2026-07-23
 
 Continue building the hosted RCA agent in `/Users/mohitrawat/projects/ingren/prod/agents`.
 Python, canonical tree, deployed in place. Mohit fully understands every line —
@@ -6,96 +6,90 @@ deliberately slower is correct.
 
 ## Read first, in this order
 
-1. `docs/design.md` — §8a–§8e amend/reverse everything
-2. `docs/issues.md` — #10 and #11 progress blocks (both built + reviewed),
-   then #12 in full (it is next)
-3. `docs/live-tests.md` — the deferred-verification ledger and what passed
-4. `infra/provision.sh` + `infra/RUNBOOK.md` — everything live in AWS
+1. `docs/design.md` — §8a–§8f amend/reverse everything. **§8f is new**
+   (Q&A async off `rca-qa.fifo`, plus its 2026-07-23 review amendments)
+2. GitHub issue #12 — closed, but its closing comment holds the
+   three-Opus review record and the two minors that stayed open
+3. `docs/live-tests.md` — Batch C (Q&A) passed 2026-07-23
+4. `infra/` — provision.sh is SPLIT: `provision-foundation.sh` (free,
+   static), `provision-definitions.sh` (free, hot), `services.sh`
+   (up|down|status — the cost axis), `lib.sh` (shared). Plus `RUNBOOK.md`
 
 ## State (as of this session's commits)
 
-- **Closed:** #1–#2, #4–#11, #16. **#10 and #11 closed 2026-07-22 —
-  the live-test ledger is clear, all of A1–A5 and B1–B5 passed.**
-  Open: #12, #13, #15 (tracker).
-- **THE SYSTEM IS LIVE, END TO END.** `rca.ingren.ai` → ALB → ingress →
-  SQS → router → Step Functions → investigator → Postgres → poller →
-  thread. First fully-hosted tag ran 2026-07-22: incident `35c6e40f`,
-  658s / 86 turns / $2.37 / 27 queries, correct verdict, terminal message
-  posted. The laptop daemon is dead (`pkill`ed, Socket Mode off).
-- **Live in AWS** (ap-south-1, `537124933640`, profile `ingren`): all of
-  #9's resources, plus poller Service (1 task), `rca-inbound` + DLQ
-  (60s × 5 ≈ 5 min to DLQ), `rca-service` Service (2 tasks: ingress on
-  8000 + router, per-container secrets, router `essential:false`), ALB
-  `rca` + 443 listener, ACM cert for `rca.ingren.ai` (Route 53 in-account,
-  zone `Z0233500389POHCI4O3MM`).
-- **Schema:** migration 004 added `incidents.terminal_posted_at` (poller's
-  completion marker; P9 §5 amended — poller updates only columns recording
-  its own acts). Existing incidents were backfilled closed before first
-  poller boot.
-- 76 tests green (`uv run --env-file .env pytest -q` from `rca/`).
-- Both slices carry three-Opus review records in their issue blocks. The
-  #11 critical find (redelivered alert routed as a question — routing key
-  vs idempotency key) is fixed with an `event_id` gate + pinning test.
+- **Closed:** #1–#2, #4–#12, #16. Open: #13, #15 (tracker).
+- **Q&A is live, end to end** (#12, ruled §8f). The flow:
+  known-thread tag → router acks "Looking at the record…" + enqueues on
+  `rca-qa.fifo` (dedup id = Slack event_id, group id = incident id) →
+  `qa/worker.py` (third container in `rca-service`, `essential:false`)
+  consumes one at a time → `qa/agent.py` answers (sonnet-5, 20 turns,
+  `rca.md` inlined from `documents`, evidence via `read_record.py` only,
+  Bash-allowlisted to that one script) → `qa_answered` event row
+  (cost_usd, migration 005) → answer posted with qid citations.
+- **Live check C1 passed:** 32s, 7 turns, $0.2166, correct answer, real
+  qid. Bonus: the live agent tried command substitution, `>`/`>&`, and
+  `find`; the PreToolUse boundary denied all four in the worker log.
+  §8a-C's tool boundary is production-demonstrated.
+- **Env-merge gotcha fixed and pinned:** the SDK merges `options.env`
+  ONTO `os.environ` — omission removes nothing. SLACK_* vars are
+  overridden to `""` on the Q&A subprocess (`subprocess_env`,
+  `tests/test_qa.py`).
+- 82 tests green (`uv run --env-file .env pytest -q` from `rca/`).
+- Task def `rca-service` is at revision 3 (3 containers); the image
+  includes `COPY qa/ qa/` (its absence broke the first boot — the
+  Dockerfile COPY list is an allowlist, add a line per new task).
 
-## Live checks — ALL PASSED 2026-07-22
+## Next build: #13 (liveness), then #15 closes
 
-`docs/live-tests.md` holds the evidence per check. A4/B4/B5 ran free;
-A3/B3 shared one paid run (incident `80d7822d`, ~$3.50 — attempt 1
-killed mid-run, attempt 2 SUCCEEDED at 76 turns / $2.35 / 812s).
-Notables:
-
-- B3's mid-processing kill is not hand-timeable; the redelivery half was
-  forced by redriving the saved envelope (B2 pattern) — the `event_id`
-  gate converged it. Ledger records the method.
-- B4's tag went in the KNOWN incident thread so the post-restore
-  redelivery routed as a free question, not a paid run.
-- B5 seeds carried `terminal_posted_at` at insert — the poller never
-  sees them, so no deletion deadline. Rows since deleted.
-- `rca-service` runs desired-count **1**, not 2 as the previous handoff
-  said. Worth a deliberate ruling when #13 lands.
-- Poller's never-started close is silent in logs by design — evidence
-  is the Slack post + `terminal_posted_at`, not a log line.
-
-## Next build: #12 (Q&A), then #13
-
-- **#12 Q&A:** the router's `answer` seam (`service/router.py`,
-  `answer_stub`) is the insertion point. `rca.md` inlined in the prompt,
-  `read_record.py` as the only executable, no `Read`/`Write`, incident id
-  from the environment, timeout posts, `cost_usd` recorded. Read §8a-C
-  first.
 - **#13 liveness:** ping after the thread lookup, Synthetics canary,
-  alarm → SNS (never Slack). The DLQ alarm story also lands here — the
-  per-type message attribute was removed in review as undeliverable at
-  ingress.
-- **#15** stays open as the provisioning tracker.
+  alarm → SNS (never Slack). The DLQ alarm story lands here — and it got
+  BETTER: `rca-qa-dlq.fifo` exists now (§8f), so alert-path and
+  question-path failures alarm per queue, no message attribute needed.
+- **Deliberate ruling due at #13:** `rca-service` desired count.
+  services.sh runs 1 (single tester); design §3 and services.sh comments
+  say restore 2 at go-live. §8f amendment 1 already accepts the
+  consequence: the Q&A storm bound is per-incident + task count.
+- **#15** stays open as the provisioning tracker; its remaining boxes
+  (idempotent re-run of the provision scripts, account audit) close at #13.
+- **Small cleanups riding along:** delete `daemon.py` (doubly stale — it
+  calls the CLI surface the #12 rewrite removed); consider
+  `max_budget_usd` on Q&A (P6 §5b, currently bounded by max_turns 20 +
+  the 300s worker timeout).
 
 ## Gotchas learned this session
 
-- **Slack Socket Mode toggle:** must be OFF or events go to the dead
-  socket; deleting the app token is not enough. Cost us the first tag.
-- **ECS + ALB ordering:** CreateService fails on a target group no
-  listener references — provision.sh gates Service creation on the cert.
-- **Bolt calls `auth.test` per dispatch** unless given a static
-  `authorize`; that was a Slack API call in front of the ack.
-- **Date bug:** mid-session docs were written "2026-07-23"; today is
-  2026-07-22. Fixed by sed; watch for stragglers in review.
+- **SDK env is merge, not replace** (`subprocess_cli.py`:
+  `{**inherited_env, **options.env}`). To strip a secret from the agent
+  subprocess, override it to `""`; omitting the key silently inherits it.
+- **FIFO group lock is queue-side only.** No consumer identity exists;
+  any worker may take a group's next message once the previous deletes.
+  One group = strict serial; group id choice = blast-radius choice.
+- **`sqs create-queue` is idempotent only for identical attributes.**
+  Changing an attribute (e.g. the load-bearing VisibilityTimeout 360 >
+  300s answer timeout) on re-run FAILS — delete and recreate instead.
+- **Roll command differs by what changed:** task-def edit needs
+  `update-service --task-definition rca-service`; image-only push needs
+  just `--force-new-deployment` (service already pins the revision).
+- **zsh eats `===` as a glob** in chained echo separators; use `---`.
 
 ## Working rules (unchanged, CLAUDE.md)
 
 - One file or coherent unit at a time, walked through in chat. Pause for
   questions. No batch code drops.
 - DB writes, migrations, AWS mutations: **Mohit runs them**, or grants
-  per-command permission in-session (this session's pattern: Claude ran
-  approved commands stepwise and watched read-only the rest of the time).
-- Never read `.env` (append-blind with `>>` was ruled fine).
+  per-command permission in-session (this session: stepwise approval,
+  Claude executed and reported each step).
+- Never read `.env`.
 - Small verify first; flag runs >2 min, background them.
 - Code review via Opus subagents for non-trivial diffs; record accepted
-  findings in the issue.
+  findings in the issue. #12's pattern: three lenses (correctness,
+  security, conformance), findings verified against code before
+  reporting, rulings recorded as §8f amendments.
 - On a decent design question, ask "what's your guess?" before framing
-  options.
-- **Live-test batching (ruled 2026-07-22):** paid/slow acceptance checks
-  land in `docs/live-tests.md` and batch across issues; free checks run
-  with their issue.
+  options. (#12's queue shape came from Mohit's own framing — it worked.)
+- **Live-test batching:** paid/slow acceptance checks land in
+  `docs/live-tests.md` and batch across issues; free checks run with
+  their issue.
 
 ## Register
 
@@ -105,6 +99,6 @@ Short sentences, one fact each, active voice, lists over paragraphs.
 ---
 
 Start by reading the docs above, confirm state (`git log --oneline -5`,
-76 tests from `rca/`), then begin #12 at the `answer` seam — read
-design.md §8a-C first. #13 follows; #15's remaining boxes (idempotent
-re-run of the provision scripts, account audit) close at #13.
+82 tests from `rca/`), then begin #13. Read P10 in `decision.md` first —
+the alarm-never-Slack rule is its ruling — and §8f for the per-queue DLQ
+story.
