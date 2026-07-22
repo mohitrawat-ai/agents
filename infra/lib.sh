@@ -21,6 +21,7 @@ ACCOUNT_ID="537124933640"
 ECR_URI="${ACCOUNT_ID}.dkr.ecr.${RCA_REGION}.amazonaws.com/rca"
 CLUSTER=rca
 SERVICE_QUEUE_URL="https://sqs.${RCA_REGION}.amazonaws.com/${ACCOUNT_ID}/rca-inbound"
+QA_QUEUE_URL="https://sqs.${RCA_REGION}.amazonaws.com/${ACCOUNT_ID}/rca-qa.fifo"
 SM_ARN="arn:aws:states:${RCA_REGION}:${ACCOUNT_ID}:stateMachine:rca-investigation"
 
 log() { printf '>> %s\n' "$*"; }

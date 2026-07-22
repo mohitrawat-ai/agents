@@ -161,7 +161,10 @@ iam_roles() {
       "Statement": [
         {"Effect": "Allow",
          "Action": ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage"],
-         "Resource": "arn:aws:sqs:'"$RCA_REGION"':'"$ACCOUNT_ID"':rca-inbound"},
+         "Resource": [
+           "arn:aws:sqs:'"$RCA_REGION"':'"$ACCOUNT_ID"':rca-inbound",
+           "arn:aws:sqs:'"$RCA_REGION"':'"$ACCOUNT_ID"':rca-qa.fifo"
+         ]},
         {"Effect": "Allow",
          "Action": "states:StartExecution",
          "Resource": "'"$SM_ARN"'"}
@@ -195,8 +198,9 @@ network() {
 }
 
 # --- Inbound queue + DLQ (#11, §8a-A) ----------------------------------------
-# ONE queue. Raw Slack envelopes in; the router consumes and calls
-# StartExecution directly — §8a-A dropped the second queue. Standard, not
+# ONE queue on the alert edge. Raw Slack envelopes in; the router consumes
+# and calls StartExecution directly — §8a-A dropped the second queue THERE.
+# (rca-qa below is a different edge, ruled separately: §8f.) Standard, not
 # FIFO: ordering is not needed (the event_id guard and execution-name
 # idempotency absorb duplicates), and FIFO throughput limits buy nothing.
 #
@@ -231,9 +235,41 @@ queues() {
   log "queue rca-inbound ($q_url)"
 }
 
+# --- Q&A queue + DLQ (#12, §8f) -----------------------------------------------
+# FIFO: MessageDeduplicationId = the Slack event_id, so a duplicate enqueue
+# dies at the queue; MessageGroupId = incident id. Visibility 360s sits
+# ABOVE the worker's 300s answer timeout — a message must never redeliver
+# mid-answer, that is the §8f duplicate-paid-call failure. maxReceiveCount 3:
+# questions are not perishable like alerts; ~18 min to the DLQ is fine.
+# The DLQ of a FIFO queue must itself be FIFO.
+
+qa_queues() {
+  local dlq_url dlq_arn q_url
+  "${AWS[@]}" sqs create-queue --queue-name rca-qa-dlq.fifo \
+    --attributes '{"FifoQueue": "true", "MessageRetentionPeriod": "345600"}' \
+    >/dev/null
+  dlq_url=$("${AWS[@]}" sqs get-queue-url --queue-name rca-qa-dlq.fifo \
+    --query QueueUrl --output text)
+  dlq_arn=$("${AWS[@]}" sqs get-queue-attributes --queue-url "$dlq_url" \
+    --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+  log "queue rca-qa-dlq.fifo"
+
+  "${AWS[@]}" sqs create-queue --queue-name rca-qa.fifo --attributes '{
+      "FifoQueue": "true",
+      "MessageRetentionPeriod": "345600",
+      "VisibilityTimeout": "360",
+      "ReceiveMessageWaitTimeSeconds": "20",
+      "RedrivePolicy": "{\"deadLetterTargetArn\":\"'"$dlq_arn"'\",\"maxReceiveCount\":\"3\"}"
+    }' >/dev/null
+  q_url=$("${AWS[@]}" sqs get-queue-url --queue-name rca-qa.fifo \
+    --query QueueUrl --output text)
+  log "queue rca-qa.fifo ($q_url)"
+}
+
 ssm_parameters
 ecr_and_logs
 iam_roles
 network
 queues
+qa_queues
 log "foundation done"

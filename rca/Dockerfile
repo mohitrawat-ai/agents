@@ -42,6 +42,7 @@ COPY investigator/ investigator/
 COPY poller/ poller/
 COPY slackbot/ slackbot/
 COPY service/ service/
+COPY qa/ qa/
 COPY entrypoint.sh ./
 RUN chmod 0755 entrypoint.sh
 

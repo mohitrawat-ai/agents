@@ -83,7 +83,7 @@ commit is the reference implementation from then on.
                     │                                              │
                     │  router:   poll inbound                       │
                     │            → look up (channel, thread_ts)     │
-                    │              known   → answer Q&A in-process  │
+                    │              known   → ack + SQS(rca-qa) §8f  │
                     │              unknown → upsert incident        │
                     │                        → StartExecution       │
                     └──────────────────────────────────────────────┘
@@ -115,8 +115,8 @@ commit is the reference implementation from then on.
 | Component | ECS shape | Responsibility | Rulings |
 |---|---|---|---|
 | **Service — ingress** | part of the 2-task Service | Verify Slack signature, write raw envelope to `inbound`, return 200. **No other I/O.** | P3 §1, §2 |
-| **Service — router** | same tasks, consumes `inbound` | Look up `(channel, thread_ts)`. Known thread → Q&A in-process. Unknown → parse, upsert the incident, `StartExecution`. **Those two writes and nothing else.** | P3 §3, §8a-A |
-| **Service — Q&A** | same tasks, in-process | `rca.md` in the prompt, evidence via a read CLI scoped by environment, no general shell (`Bash` hook-limited to that CLI), no tmpdir. Post the answer. | §8a-C, P8 §7 |
+| **Service — router** | same tasks, consumes `inbound` | Look up `(channel, thread_ts)`. Known thread → ack + enqueue on `rca-qa` (§8f). Unknown → parse, upsert the incident, `StartExecution`. **Those two writes and nothing else.** | P3 §3, §8a-A, §8f |
+| **Service — Q&A** | same tasks, `qa-worker` container | Consume `rca-qa` one message at a time. `rca.md` in the prompt, evidence via a read CLI scoped by environment, no general shell (`Bash` hook-limited to that CLI), no tmpdir. Record cost, post the answer. | §8a-C, §8f, P8 §7 |
 | **Investigation task** | one Fargate Task per run | The Claude Agent SDK box. Takes `{incident_id}`, reads `raw` from Postgres, materializes `alert.json` in its own workdir → record out. **D3's seam is at the agent boundary, not the task boundary** — the agent still sees `alert.json` in → record out. | P1, D3, §8a-A |
 | **Poller** | separate 1-task Service | Narrate milestones from the events table; post the terminal message from Step Functions; post the never-started case (§8a-A). Also posts the *"investigating…"* ack, off `run_started`. | P8, §8a-A |
 | **Canary** | CloudWatch Synthetics | `@rca ping` end-to-end every 24h (15m at go-live). | P10 |
@@ -940,6 +940,105 @@ holds in substance — no second investigation, no second $2.
 
 **Consequence:** `rca_agent` gains `SELECT` on `events`, wrapper-scoped to
 its own incident like its `queries` read (P9 §5 re-ruling). Migration 003.
+
+### 8f. Q&A runs async off its own queue — ruled 2026-07-22 (issue #12)
+
+**The finding (#12):** §8a-C put Q&A in-process on the Service, and the
+component table has the router answering inline on its consumer loop.
+Wiring the seam surfaced two failures the inline shape cannot fix:
+
+1. **An alert waits behind a question.** A Q&A call runs 30–300s (P8 §7's
+   timeout); the router handles one message at a time, so the alert path —
+   the perishable one — queues behind the slow, non-perishable one.
+2. **`inbound`'s 60s visibility timeout redelivers a question mid-answer.**
+   The redelivery routes as the same question and pays a second LLM call.
+   Visibility cannot simply be raised: 60s is sized for the alert path's
+   redelivery-to-DLQ window (~5 min).
+
+It also exposed that P6 §3's Q&A storm bound — "the Service's SQS consumer
+concurrency" — only exists while Q&A blocks the consumer. Fixing the
+blocking with a thread per question (the daemon's prior art) deletes the
+bound: N mentions become N concurrent paid calls again.
+
+**Ruled: the router does not answer.** On the question path it posts the
+ack (*"Looking at the record…"*), sends `{incident_id, channel, thread_ts,
+question, event_id}` to a new FIFO queue **`rca-qa`**, and returns. A new
+**`qa-worker`** — third container in the `rca-service` task,
+`essential:false` like the router — consumes it synchronously, one message
+at a time, runs `qa/agent.py`, records the cost, posts the answer.
+
+- **FIFO, `MessageDeduplicationId` = the Slack `event_id`:** duplicate
+  enqueues die at the queue, not in code.
+- **Visibility timeout above the 300s answer timeout:** no mid-answer
+  redelivery, ever.
+- **One synchronous consumer restores P6's bound and makes it explicit:**
+  a storm queues behind one paid call at a time instead of fanning out.
+- **A crash mid-answer redelivers the question:** answered late, not lost
+  (invariant 6). The thread shape loses it silently after the ack.
+- **Own DLQ:** repays §8a-A's accepted cost — question-path failures no
+  longer mix into the alert path's DLQ, and #13 alarms per queue with no
+  message attribute needed.
+
+**Checked against §8a-A (one queue).** That ruling deleted a queue on the
+router → Step Functions edge because idempotency made every crash point
+converge without it, and P6 §4 forbade the buffering a queue would add.
+Neither argument transfers. The Q&A edge has no idempotent
+`StartExecution` — the work *is* the paid call — and a question queued
+behind one consumer is not the excess-investigation buffering P6 §4
+rejected: the record is frozen, so an answer minutes late is still the
+answer.
+
+**Rejected:**
+
+- *Answer inline on the router loop* — the two failures above.
+- *A thread per question* (daemon prior art) — unbounded paid concurrency;
+  reopens P6's storm; a Service crash after the ack loses the question
+  silently.
+- *A separate `qa` service* — buys process isolation from ingress's 3s ack,
+  a failure that is predicted, not observed; one more always-on task is
+  ~$9–10/month on a system idling at ~$36. The third container clears the
+  mantra's bar; a service does not (yet). Named trigger to revisit: an
+  observed ingress ack timeout while a Q&A run is active.
+
+**Accepted costs.** A crash between the ack and the enqueue (or between a
+redelivered enqueue and its ack) can double-post the ack — FIFO dedup
+still guarantees one answer. A worker crash after posting the answer but
+before the delete re-answers once, ~300s later; same negligible class as
+§8a-A's re-fetch. Two queues exist again — but on different edges, each
+earning its keep separately.
+
+**Consequences:**
+
+- The component table's router and Q&A rows read through this section:
+  "in-process on the Service" now means the `qa-worker` container, not the
+  router's loop.
+- `provision.sh`: `rca-qa.fifo` + its DLQ; the task definition gains the
+  third container.
+- **Migration 005: `GRANT INSERT ON events TO rca_service`.** The worker
+  records `qa_answered` (`cost_usd`, `turns`, `elapsed_s`) — its own act,
+  under the incident and attempt it answered from (P6 §6, P9 §5). The
+  daily spend query now sees both halves of the spend.
+
+**Amended 2026-07-23 (#12 three-Opus review, three rulings):**
+
+1. **The storm bound is per incident, not global.** `MessageGroupId` =
+   incident id serializes questions within an incident at the queue; the
+   global bound is the task count (2 at go-live, and briefly 2 during any
+   rolling deploy). Ruled acceptable: the alternative — one constant
+   message group — makes a poison question block every incident's
+   questions for up to ~18 minutes, and per-incident blast radius wins.
+   "One synchronous consumer" above now reads per task.
+2. **A Slack post failure discards the computed answer** and the
+   redelivery pays the LLM call again, up to maxReceiveCount times, with
+   a duplicate `qa_answered` row per round. Ruled accepted: Q&A is one
+   short non-agentic-scale call, and the trigger (a Slack outage inside
+   that window) is rare. Revisit if the DLQ ever shows a burst of
+   post-failure questions.
+3. **The final receive posts a dead end.** Only the timeout used to post;
+   every other terminal failure left the asker on the ack forever —
+   invariant 6's shape. The worker now posts a failure message on the
+   receive that matches maxReceiveCount, best-effort, and the message
+   still lands in the DLQ as the ops record.
 
 ---
 

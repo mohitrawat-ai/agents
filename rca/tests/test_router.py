@@ -16,9 +16,10 @@ from botocore.exceptions import ClientError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from service.router import RATE_LIMIT, answer_stub, handle
+from service.router import RATE_LIMIT, enqueue_question, handle
 
 CFG = {"sm_arn": "arn:aws:states:ap-south-1:1:stateMachine:rca-investigation",
+       "qa_queue_url": "https://sqs.ap-south-1.amazonaws.com/1/rca-qa.fifo",
        "allowlist": {"C-OK"}}
 INCIDENT_ID = "11111111-2222-3333-4444-555555555555"
 
@@ -62,6 +63,14 @@ class FakeSlack:
         return {"messages": [{"text": self.parent_text}]}
 
 
+class FakeSQS:
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    def send_message(self, **kw):
+        self.sent.append(kw)
+
+
 class FakeSFN:
     def __init__(self, already_exists=False):
         self.already_exists = already_exists
@@ -84,7 +93,7 @@ def mention(channel="C-OK", ts="100.1", thread_ts=None, text="<@U1> alarm \"api-
 
 def test_new_alert_upserts_starts_and_never_posts():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN()
-    handle(conn, slack, sfn, CFG, mention())
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention())
     assert len(conn.upserted) == 1
     assert len(sfn.started) == 1
     start = sfn.started[0]
@@ -96,7 +105,7 @@ def test_new_alert_upserts_starts_and_never_posts():
 def test_upsert_carries_event_id_envelope_and_received_utc():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN()
     body = mention()
-    handle(conn, slack, sfn, CFG, body)
+    handle(conn, slack, sfn, FakeSQS(), CFG, body)
     event_id, channel, anchor, _slug, raw, received = conn.upserted[0]
     assert event_id == "Ev1"
     assert (channel, anchor) == ("C-OK", "100.1")
@@ -107,7 +116,7 @@ def test_upsert_carries_event_id_envelope_and_received_utc():
 
 def test_threaded_mention_uses_parent_as_alert_text():
     conn, slack, sfn = FakeConn(), FakeSlack(parent_text="PARENT!"), FakeSFN()
-    handle(conn, slack, sfn, CFG, mention(ts="100.2", thread_ts="100.1"))
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention(ts="100.2", thread_ts="100.1"))
     assert slack.parent_fetches == 1
     assert conn.upserted[0][4].obj["raw"] == "PARENT!"
     assert conn.upserted[0][2] == "100.1"  # anchored to the thread, not the reply
@@ -118,8 +127,8 @@ def test_known_thread_routes_to_answer_not_alert():
     conn = FakeConn(known={"id": INCIDENT_ID, "event_id": "Ev-original"})
     slack, sfn = FakeSlack(), FakeSFN()
     seen = []
-    handle(conn, slack, sfn, CFG, mention(thread_ts="90.1", ts="100.5"),
-           answer=lambda _c, _s, iid, _e: seen.append(iid))
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention(thread_ts="90.1", ts="100.5"),
+           answer=lambda _q, _cf, _s, iid, _e, _eid: seen.append(iid))
     assert seen == [INCIDENT_ID]
     assert conn.upserted == []
     assert sfn.started == []
@@ -132,8 +141,8 @@ def test_redelivered_alert_redrives_start_not_qa():
     conn = FakeConn(known={"id": INCIDENT_ID, "event_id": "Ev1"})
     slack, sfn = FakeSlack(), FakeSFN()
     seen = []
-    handle(conn, slack, sfn, CFG, mention(),
-           answer=lambda _c, _s, iid, _e: seen.append(iid))
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention(),
+           answer=lambda _q, _cf, _s, iid, _e, _eid: seen.append(iid))
     assert seen == []  # not a question
     assert conn.upserted == []  # no second row
     assert len(sfn.started) == 1  # the run is re-driven
@@ -143,7 +152,7 @@ def test_redelivered_alert_redrives_start_not_qa():
 
 def test_unallowlisted_channel_is_dropped_entirely():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN()
-    handle(conn, slack, sfn, CFG, mention(channel="C-GENERAL"))
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention(channel="C-GENERAL"))
     assert conn.upserted == []
     assert sfn.started == []
     assert slack.posts == []
@@ -152,7 +161,7 @@ def test_unallowlisted_channel_is_dropped_entirely():
 def test_rate_limit_refuses_in_thread_without_starting():
     conn = FakeConn(recent=RATE_LIMIT)
     slack, sfn = FakeSlack(), FakeSFN()
-    handle(conn, slack, sfn, CFG, mention())
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention())
     assert conn.upserted == []
     assert sfn.started == []
     assert len(slack.posts) == 1
@@ -161,7 +170,7 @@ def test_rate_limit_refuses_in_thread_without_starting():
 
 def test_empty_alert_text_gets_guidance_not_an_incident():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN()
-    handle(conn, slack, sfn, CFG, mention(text="<@U1>"))
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention(text="<@U1>"))
     assert conn.upserted == []
     assert sfn.started == []
     assert "Tag me on an alert" in slack.posts[0]["text"]
@@ -169,14 +178,31 @@ def test_empty_alert_text_gets_guidance_not_an_incident():
 
 def test_execution_already_exists_is_a_noop_not_an_error():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN(already_exists=True)
-    handle(conn, slack, sfn, CFG, mention())  # must not raise
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention())  # must not raise
     assert len(conn.upserted) == 1
 
 
-def test_answer_stub_posts_a_dead_end():
-    slack = FakeSlack()
-    answer_stub(None, slack, INCIDENT_ID, {"channel": "C-OK", "ts": "1.1"})
-    assert len(slack.posts) == 1
+def test_question_acks_then_enqueues_fifo_deduped():
+    slack, sqs = FakeSlack(), FakeSQS()
+    event = {"channel": "C-OK", "ts": "100.5", "thread_ts": "90.1",
+             "text": "<@U1> what did q04 show?"}
+    enqueue_question(sqs, CFG, slack, INCIDENT_ID, event, "Ev-q1")
+    assert slack.posts[0]["text"] == "Looking at the record…"
+    sent = sqs.sent[0]
+    assert json.loads(sent["MessageBody"]) == {
+        "incident_id": INCIDENT_ID, "channel": "C-OK", "thread_ts": "90.1",
+        "question": "what did q04 show?", "event_id": "Ev-q1"}
+    assert sent["QueueUrl"] == CFG["qa_queue_url"]
+    assert sent["MessageDeduplicationId"] == "Ev-q1"  # §8f: dedup at the queue
+    assert sent["MessageGroupId"] == INCIDENT_ID
+
+
+def test_empty_question_gets_guidance_not_an_enqueue():
+    slack, sqs = FakeSlack(), FakeSQS()
+    enqueue_question(sqs, CFG, slack, INCIDENT_ID,
+                     {"channel": "C-OK", "ts": "1.1", "text": "<@U1>"}, "Ev-q2")
+    assert sqs.sent == []
+    assert "Ask me something" in slack.posts[0]["text"]
 
 
 def test_other_sfn_errors_propagate_for_redelivery():
@@ -185,4 +211,4 @@ def test_other_sfn_errors_propagate_for_redelivery():
             raise ClientError({"Error": {"Code": "AccessDenied"}}, "StartExecution")
 
     with pytest.raises(ClientError):
-        handle(FakeConn(), FakeSlack(), Boom(), CFG, mention())
+        handle(FakeConn(), FakeSlack(), Boom(), FakeSQS(), CFG, mention())

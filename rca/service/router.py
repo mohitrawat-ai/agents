@@ -16,11 +16,13 @@ thread is an alert; a tag in a thread we already know is a question. The
 3. Nothing non-idempotent sits between the upsert and `StartExecution`.
    The happy alert path makes NO Slack post — the ack is the poller's.
 
-The router does post in three dead-end cases, each terminal for its
-message and creating no incident: a tag with no findable alert text, the
-rate-limit refusal (ruled in-thread, #11), and — until #12 lands — a
-stub reply to questions, because silence is the one wrong answer
-(invariant 6). #12 replaces the stub via the `answer` seam.
+The router does post in four cases, each creating no incident: a tag
+with no findable alert text, the rate-limit refusal (ruled in-thread,
+#11), the empty-question guidance, and the "Looking at the record…" ack
+before a question is enqueued (#12, §8f). The router never answers a
+question itself: a Q&A call runs 30-300s, which would block the alert
+path and outlive inbound's 60s visibility timeout — it acks, enqueues on
+`rca-qa`, and returns. qa/worker.py answers.
 
 A failed message is never deleted: it redelivers, and after
 maxReceiveCount lands in the DLQ (queue config, provision.sh). Errors
@@ -33,8 +35,9 @@ the untouched Slack event callback (§8a-D: the sample nobody has, and
 the backfill source if dedup is ever built).
 
 Env (task definition, #11): RCA_DATABASE_URL (role rca_service),
-SLACK_BOT_TOKEN, RCA_INBOUND_QUEUE_URL, RCA_STATE_MACHINE_ARN,
-RCA_CHANNEL_ALLOWLIST (comma-separated channel ids).
+SLACK_BOT_TOKEN, RCA_INBOUND_QUEUE_URL, RCA_QA_QUEUE_URL,
+RCA_STATE_MACHINE_ARN, RCA_CHANNEL_ALLOWLIST (comma-separated
+channel ids).
 
 Run: python -m service.router
 """
@@ -122,25 +125,52 @@ def start_investigation(sfn, cfg: dict, incident_id: str) -> None:
     print(f"[router] investigation started: {incident_id}")
 
 
-def answer_stub(_conn, slack: WebClient, _incident_id: str, event: dict) -> None:
-    """The Q&A seam — #12 replaces this with the real in-process Q&A,
-    which is what the unused-here conn and incident id are for. Until
-    then a question gets a dead end it can act on, not silence."""
-    _post(
-        slack,
-        event["channel"],
-        event.get("thread_ts") or event["ts"],
-        "I can't answer questions about this incident yet — Q&A lands shortly.",
+def enqueue_question(
+    sqs, cfg: dict, slack: WebClient, incident_id: str, event: dict, event_id: str
+) -> None:
+    """The question path (#12, §8f): ack, enqueue on `rca-qa`, return.
+    FIFO dedup on the Slack event_id makes the enqueue idempotent; the
+    ack may double-post across a crash (§8f accepted cost). An empty
+    question gets guidance instead — nothing to enqueue."""
+    anchor = event.get("thread_ts") or event["ts"]
+    question = " ".join(
+        w for w in event.get("text", "").split() if not w.startswith("<@")
+    ).strip()
+    if not question:
+        _post(
+            slack,
+            event["channel"],
+            anchor,
+            'Ask me something about this incident — e.g. "what did q04 '
+            'show?" or "what was the verdict?".',
+        )
+        return
+    _post(slack, event["channel"], anchor, "Looking at the record…")
+    sqs.send_message(
+        QueueUrl=cfg["qa_queue_url"],
+        MessageBody=json.dumps(
+            {
+                "incident_id": incident_id,
+                "channel": event["channel"],
+                "thread_ts": anchor,
+                "question": question,
+                "event_id": event_id,
+            }
+        ),
+        MessageGroupId=incident_id,
+        MessageDeduplicationId=event_id,
     )
+    print(f"[router] question enqueued: {incident_id}")
 
 
 def handle(
     conn: psycopg.Connection,
     slack: WebClient,
     sfn,
+    sqs,
     cfg: dict,
     body: dict,
-    answer=answer_stub,
+    answer=enqueue_question,
 ) -> None:
     """Route one envelope. Raising leaves the message on the queue for
     redelivery; returning normally lets the caller delete it."""
@@ -157,7 +187,7 @@ def handle(
 
     known = conn.execute(LOOKUP, (channel, anchor)).fetchone()
     if known and known["event_id"] != body.get("event_id"):
-        answer(conn, slack, str(known["id"]), event)
+        answer(sqs, cfg, slack, str(known["id"]), event, body.get("event_id"))
         return
     if known:
         # Same event_id: this is the ALERT redelivering, not a question
@@ -226,6 +256,7 @@ def main() -> int:
     queue_url = _env("RCA_INBOUND_QUEUE_URL")
     cfg = {
         "sm_arn": _env("RCA_STATE_MACHINE_ARN"),
+        "qa_queue_url": _env("RCA_QA_QUEUE_URL"),
         "allowlist": {
             c.strip()
             for c in _env("RCA_CHANNEL_ALLOWLIST").split(",")
@@ -250,7 +281,7 @@ def main() -> int:
             ) as conn:
                 for msg in msgs:
                     try:
-                        handle(conn, slack, sfn, cfg, json.loads(msg["Body"]))
+                        handle(conn, slack, sfn, sqs, cfg, json.loads(msg["Body"]))
                         sqs.delete_message(
                             QueueUrl=queue_url, ReceiptHandle=msg["ReceiptHandle"]
                         )

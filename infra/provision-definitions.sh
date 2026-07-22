@@ -174,6 +174,7 @@ service_definition() {
         "command": ["python", "-m", "service.router"],
         "environment": [
           {"name": "RCA_INBOUND_QUEUE_URL", "value": "'"$SERVICE_QUEUE_URL"'"},
+          {"name": "RCA_QA_QUEUE_URL",      "value": "'"$QA_QUEUE_URL"'"},
           {"name": "RCA_STATE_MACHINE_ARN", "value": "'"$SM_ARN"'"},
           {"name": "RCA_CHANNEL_ALLOWLIST", "value": "'"$RCA_CHANNEL_ALLOWLIST"'"}
         ],
@@ -189,10 +190,32 @@ service_definition() {
             "awslogs-stream-prefix": "service-router"
           }
         }
+      },
+      {
+        "name": "qa-worker",
+        "image": "'"$ECR_URI"':latest",
+        "essential": false,
+        "command": ["python", "-m", "qa.worker"],
+        "environment": [
+          {"name": "RCA_QA_QUEUE_URL", "value": "'"$QA_QUEUE_URL"'"}
+        ],
+        "secrets": [
+          {"name": "RCA_DATABASE_URL",  "valueFrom": "'"$p"'/db/service-url"},
+          {"name": "SLACK_BOT_TOKEN",   "valueFrom": "'"$p"'/slack/bot-token"},
+          {"name": "ANTHROPIC_API_KEY", "valueFrom": "'"$p"'/anthropic/api-key"}
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/rca",
+            "awslogs-region": "'"$RCA_REGION"'",
+            "awslogs-stream-prefix": "service-qa-worker"
+          }
+        }
       }
     ]
   }' >/dev/null
-  log "task definition rca-service (2 containers)"
+  log "task definition rca-service (3 containers)"
 }
 
 # --- State machine (#9, §8e) --------------------------------------------------
