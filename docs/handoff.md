@@ -1,68 +1,73 @@
-# Session handoff — 2026-07-22
+# Session handoff — 2026-07-22 (evening)
 
 Continue building the hosted RCA agent in `/Users/mohitrawat/projects/ingren/prod/agents`.
 Python, canonical tree, deployed in place. Mohit fully understands every line —
-deliberately slower is correct. Implement with Opus 4.8; run code review via Opus 4.8
-subagents.
+deliberately slower is correct.
 
 ## Read first, in this order
 
-1. `docs/design.md` — §8a and §8c amend/reverse everything; read them before the rest
-2. `docs/decision.md` — only sections a slice cites (esp. P4 §6, P7, P8, §8a-A/B for #9)
-3. `docs/issues.md` — the backlog; read #9, #15, #16 in full
-4. `rca/investigator/procedure.md` — do not edit beyond ruled edits
-5. `rca/investigator/run.py`, `hooks.py`, `tools/db.py` — the current SDK box and sink
+1. `docs/design.md` — §8a–**§8e** amend/reverse everything; §8d and §8e are new
+   this session. Read them before the rest
+2. `docs/issues.md` — read #9 in full (it is mid-flight), then #6, #15
+3. `rca/investigator/run.py` — the §8e retry guard is at the top of `main()`
+4. `infra/provision.sh` + `infra/RUNBOOK.md` — what exists in AWS and how it ran
 
-## State (as of commit `17cbf14`)
+## State (as of commit `3392cb9`)
 
-- **Closed:** #1 (commit+ruff), #2 (schema on Neon), #4 (tools→Postgres, read_record),
-  #5 (seed script), #7 (run.py takes `{incident_id}`, six exit codes, budget cap),
-  #8 (PreToolUse boundary).
-- **#6:** code half done (four `.env` loaders deleted, reads `os.environ`). Container
-  half (no `.env` in image, per-task secret scoping, SLACK token swap) tracks #9/#11/#15.
-- Postgres is **Neon**. Four connection strings in `rca/.env`: `DATABASE_URL` (owner,
-  direct), `RCA_AGENT/SERVICE/POLLER_DATABASE_URL` (roles, pooled), and
-  `RCA_DATABASE_URL` (role-neutral, = the agent string for the investigator).
-- The record has a real verify run (slug `2026-07-18T02-47Z`) plus smoke attempts 1–6.
+- **Closed:** #1, #2, #4, #5, #7*, #8, **#16** (NOTES are capture-only
+  `instrument_note` events — §8d; ruled and landed 2026-07-22).
+- **#15 in flight:** `infra/provision.sh` skeleton + SSM section live. 11
+  SecureStrings under `/rca/` in **ap-south-1** (region ruled), account
+  `537124933640`, profile `ingren`. Partner access is **AssumeRole**
+  (`arn:aws:iam::356367897942:role/ingren-rca-readonly` + ExternalId), NOT
+  static keys; profile `hb-role` locally. Script invocation:
+  `uv run --project rca --env-file rca/.env bash infra/provision.sh`
+  (bash `source` chokes on the `.env` format — do not revert that).
+- **#9 in flight:** §8e ruled — machine retries `States.TaskFailed` blind
+  (1 retry); `run.py` refuses re-runs of policy stops (exit 1/4) by reading
+  the prior attempt's `run_failed` row. Migration 003 (agent SELECT on
+  events) applied to Neon. 47 tests green.
+- *#7 and #16 each keep one deferred box: they close on #9's first full run
+  (record parity; an `instrument_note` at close-out). #9 lists both riders.
 
-## Two decisions are Mohit's, both due now
+## Next: #9 units 3–5, in order
 
-Raise them, do not decide silently.
+1. **Dockerfile** — Python 3.12 + uv, Node + `@anthropic-ai/claude-code`,
+   AWS CLI, `~/.aws/config` with profile `hb-role` +
+   `credential_source = EcsContainer` (then `aws_log.py` needs no change).
+   No `.env` in the image — closes #6 boxes, proven from the container.
+2. **provision.sh growth** — ECR, ECS cluster, log group, IAM roles (task,
+   execution, SFN; task role gets `sts:AssumeRole` on the partner ARN with
+   ExternalId), task definition (SSM `secrets` mapping, P9 §4 scoping:
+   no bot token in the investigation task), state machine (name = incident
+   id, input `{incident_id}` only, blind Retry ×1). ATTEMPT env var from
+   `$$.State.RetryCount` — needs JSONata or States.MathAdd; check before
+   writing ASL.
+3. **Verify** — hand `StartExecution` against a seeded incident: duplicate
+   start no-ops, killed task restarts once and writes `attempt = 2`, cap at
+   2, budget/poison stop without re-investigation. Plus the two riders.
+   Mohit runs all AWS mutations — hand over commands.
 
-1. **#16 ruling** — NOTES appends vanish in a hosted container. Its implementation must
-   land before #9's first containerized run. Three shapes drafted (emit-for-review /
-   NOTES-to-Postgres / drop the instruction). Constraint: P5's threat model — any
-   unreviewed agent write path into the NOTES is a prompt-injection persistence channel.
-   Frame the shapes and their costs; let Mohit rule.
-2. **Sequencing** — #9 (Step Functions state machine + restart Retry) needs AWS
-   infrastructure, which needs #15 (checked-in AWS CLI provisioning script) — never
-   started. #15 needs an AWS account + credentials configured, which is Mohit's to run.
-   Ask whether to start #15 (provisioning) or discuss #9's shape first.
+## Working rules (unchanged, CLAUDE.md)
 
-## Working rules (CLAUDE.md, non-negotiable)
-
-- One file or coherent unit at a time, walked through in chat before the next. No batch
-  code drops. Pause for questions.
-- Database writes, migrations, AWS resource creation, account signups are **Mohit's to
-  run** — hand him the exact command, never execute.
+- One file or coherent unit at a time, walked through in chat. Pause for
+  questions. No batch code drops.
+- DB writes, migrations, AWS resource creation: **Mohit runs them.**
 - Never read `.env`.
-- Every issue ends by running its acceptance criteria and reporting results; verify
-  against a real alert where the issue says so. Small verify first, flag any run >2 min.
-- Code review: Opus 4.8 subagents (design + bug + security lenses; single reviewer for
-  trivial/deletion diffs). Fix real findings, record accepted ones in the issue.
-- On a decent design/trade-off question, ask "what's your guess?" before framing options.
-- Match process weight to task weight — no heavy ceremony for mechanical edits.
+- Small verify first; flag any run >2 min before starting it.
+- Code review via Opus subagents for non-trivial diffs; record accepted
+  findings in the issue.
+- On a decent design question, ask "what's your guess?" before framing
+  options. This worked well for §8e.
 
-## Register for technical chat
+## Register
 
-Ruled this session, in CLAUDE.md "Writing voice": **ASD-STE100 style** for
-walkthroughs/runbooks/status — short sentences, one fact each, active voice, lists over
-paragraphs. Lead with the action or the result.
-
-## Skills
-
-`/tdd` (used for #2), `/i-have-adhd` (project skill added this session).
+**ASD-STE100 for technical chat** — now enforced by a `UserPromptSubmit`
+hook (global settings) that injects the rule every turn, added this session
+after two lapses. Follow it. A memory file also reinforces it.
 
 ---
 
-Start by reading the docs above, confirm the state, then raise the two decisions.
+Start by reading the docs above, confirm state (`git log --oneline -5`,
+47 tests via `uv run --env-file .env pytest -q` from `rca/`), then begin
+the Dockerfile unit.
