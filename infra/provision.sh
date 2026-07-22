@@ -319,6 +319,87 @@ EOF
   log "state machine rca-investigation"
 }
 
+# --- Poller: role, task definition, Service (#10) ---------------------------
+# One always-on task: narrates events rows, posts the terminal message.
+# Secret scoping (P9 §4): poller DSN + bot token, nothing else. No partner
+# vars, so entrypoint.sh writes no hb-role profile. The task role may only
+# ask Step Functions whether runs ended: DescribeExecution on this
+# machine's executions, and nothing else.
+#
+# The Service pins desired-count 1 with maximumPercent 100. ECS may never
+# run two pollers at once, even mid-deploy — two tasks would post every
+# line twice (#10 rejects a lease for the same reason). A deploy is
+# therefore stop-then-start; the cursor makes catch-up idempotent.
+#
+# Sequencing: the image must contain poller/ before this Service starts,
+# or it crash-loops. RUNBOOK covers the push-then-provision order.
+
+poller() {
+  local ecs_trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+  "${AWS[@]}" iam get-role --role-name rca-poller >/dev/null 2>&1 \
+    || "${AWS[@]}" iam create-role --role-name rca-poller \
+         --assume-role-policy-document "$ecs_trust" >/dev/null
+  "${AWS[@]}" iam put-role-policy --role-name rca-poller \
+    --policy-name describe-investigation-executions --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [{
+        "Effect": "Allow",
+        "Action": "states:DescribeExecution",
+        "Resource": "arn:aws:states:'"$RCA_REGION"':'"$ACCOUNT_ID"':execution:rca-investigation:*"
+      }]}'
+  log "iam role rca-poller"
+
+  local p="arn:aws:ssm:${RCA_REGION}:${ACCOUNT_ID}:parameter/rca"
+  "${AWS[@]}" ecs register-task-definition --cli-input-json '{
+    "family": "rca-poller",
+    "requiresCompatibilities": ["FARGATE"],
+    "networkMode": "awsvpc",
+    "cpu": "256",
+    "memory": "512",
+    "runtimePlatform": {"cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX"},
+    "executionRoleArn": "arn:aws:iam::'"$ACCOUNT_ID"':role/rca-task-execution",
+    "taskRoleArn": "arn:aws:iam::'"$ACCOUNT_ID"':role/rca-poller",
+    "containerDefinitions": [{
+      "name": "poller",
+      "image": "'"$ECR_URI"':latest",
+      "command": ["python", "poller/main.py"],
+      "essential": true,
+      "environment": [
+        {"name": "RCA_STATE_MACHINE_ARN",
+         "value": "arn:aws:states:'"$RCA_REGION"':'"$ACCOUNT_ID"':stateMachine:rca-investigation"}
+      ],
+      "secrets": [
+        {"name": "RCA_DATABASE_URL", "valueFrom": "'"$p"'/db/poller-url"},
+        {"name": "SLACK_BOT_TOKEN",  "valueFrom": "'"$p"'/slack/bot-token"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/rca",
+          "awslogs-region": "'"$RCA_REGION"'",
+          "awslogs-stream-prefix": "poller"
+        }
+      }
+    }]
+  }' >/dev/null
+  log "task definition rca-poller (arm64, 0.25 vCPU / 512 MB)"
+
+  local subnets_csv
+  subnets_csv=$(printf '%s,' $SUBNET_IDS); subnets_csv=${subnets_csv%,}
+  if "${AWS[@]}" ecs describe-services --cluster "$CLUSTER" --services rca-poller \
+       --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+    "${AWS[@]}" ecs update-service --cluster "$CLUSTER" --service rca-poller \
+      --task-definition rca-poller >/dev/null
+  else
+    "${AWS[@]}" ecs create-service --cluster "$CLUSTER" --service-name rca-poller \
+      --task-definition rca-poller --desired-count 1 --launch-type FARGATE \
+      --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0" \
+      --network-configuration "awsvpcConfiguration={subnets=[$subnets_csv],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+      >/dev/null
+  fi
+  log "service rca-poller (desired 1)"
+}
+
 # Hard gate: wrong profile or region must stop the script, not scroll past.
 account=$("${AWS[@]}" sts get-caller-identity --query Account --output text)
 [[ "$account" == "$ACCOUNT_ID" ]] || {
@@ -332,4 +413,5 @@ iam_roles
 network
 task_definition
 state_machine
+poller
 log "done"

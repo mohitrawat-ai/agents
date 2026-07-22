@@ -429,6 +429,30 @@ Also owns two things moved here by §8a-A:
 quiet, indistinguishable from a slow investigation. Something whose only job is
 talking should be loudly broken when it cannot talk.
 
+**Progress 2026-07-23:** built — `poller/main.py` (single file), migration
+004 (`terminal_posted_at` + poller grant, a P9 §5 amendment ruled
+in-session: the poller updates exactly the columns recording its own
+actions), poller section in `provision.sh` (role `rca-poller` with
+`DescribeExecution` only; task def with poller DSN + bot token; Service
+pinned to one task via `maximumPercent=100`), Dockerfile `COPY poller/`,
+15 unit tests on the two pure formatters. Poll interval ruled 30s
+(milestones land ~48s apart, P8 §1). Three-Opus review, four findings
+fixed: terminal lookup now attempt-scoped (attempt 1's `run_failed` must
+not label attempt 2's hard death); `format_event` made total (a malformed
+payload would have wedged the cursor forever); posts truncated at Slack's
+40k hard limit (same wedge); no-row terminal message names both causes —
+hard death *or* startup failure, since exit 2 usually cannot write a row.
+Never-started grace raised 600s→1800s: the close is irreversible, so the
+window must clear any redelivery span; #11 pins it when the queue exists.
+Deployed 2026-07-23: service ACTIVE 1/1, clean boot, 0 open incidents
+after backfill. **Live acceptance deferred to `docs/live-tests.md`
+Batch A** (ruled in-session: paid checks batch across issues).
+Residuals recorded, not fixed: `update-service` re-runs don't re-assert
+deployment/network config (script is sole creator); a superseded
+`Run failed` line is narrated before a restart's ack (honest live
+narration, kept). Deploy needs a one-time backfill closing pre-poller
+incidents, or first boot narrates every old thread.
+
 ### Acceptance criteria
 
 - [ ] Narrates milestones from `events` by row-id cursor; `tool_call` is not posted

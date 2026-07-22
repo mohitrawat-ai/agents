@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Headless RCA agent: Slack-triggered investigation of NR/CloudWatch alerts."
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.43.53",
     "claude-agent-sdk>=0.2.122",
     "langfuse>=4.14.0",
     "matplotlib>=3.11.1",

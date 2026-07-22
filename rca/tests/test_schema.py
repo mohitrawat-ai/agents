@@ -238,7 +238,7 @@ def test_service_cannot_delete(service, incident):
     denied(service, "DELETE FROM queries WHERE incident_id = %s", (incident,))
 
 
-# --- rca_poller: reads, and writes exactly one column -----------------------
+# --- rca_poller: reads, and writes exactly its own two columns --------------
 
 
 def test_poller_reads_events_and_incidents(poller, incident):
@@ -250,9 +250,14 @@ def test_poller_reads_events_and_incidents(poller, incident):
     ).fetchone()
 
 
-def test_poller_updates_only_its_cursor(poller, incident):
+def test_poller_updates_only_its_own_columns(poller, incident):
+    """Cursor (002) and completion marker (004, #10) — the columns that
+    record the poller's own actions. Everything else stays denied."""
     poller.execute(
         "UPDATE incidents SET narrated_through = 3 WHERE id = %s", (incident,)
+    )
+    poller.execute(
+        "UPDATE incidents SET terminal_posted_at = now() WHERE id = %s", (incident,)
     )
     denied(poller, "UPDATE incidents SET channel = 'x' WHERE id = %s", (incident,))
 

@@ -34,6 +34,16 @@ ARM. From the repo root:
 The task definition pins `:latest`; a push then a new `StartExecution`
 picks it up. No redeploy step exists yet — one task per run.
 
+## Poller deploy (#10)
+
+The poller is an ECS Service pinned to one task. Order matters on first
+provision: push an image that contains `poller/` first, then run
+`provision.sh` — a Service started against an image without the code
+crash-loops. After later code changes, push and then roll the Service:
+
+    aws ecs update-service --profile ingren --region ap-south-1 \
+      --cluster rca --service rca-poller --force-new-deployment
+
 ## Running the script
 
 From the repo root:

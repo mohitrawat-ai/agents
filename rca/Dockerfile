@@ -39,6 +39,7 @@ RUN uv sync --frozen --no-dev
 # Code layers last: an edit to a tool rebuilds only these.
 COPY tools/ tools/
 COPY investigator/ investigator/
+COPY poller/ poller/
 COPY entrypoint.sh ./
 RUN chmod 0755 entrypoint.sh
 
