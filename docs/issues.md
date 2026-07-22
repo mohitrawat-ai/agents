@@ -6,9 +6,11 @@
 > architecture.
 
 Fourteen live issues covering `design.md` §6 (Slice 0–6) plus the gaps that §6
-assumed but never gave a home. **Not yet published.** Numbers below are local;
-they become real identifiers on publish, and "Blocked by" rewrites to match.
-Struck issues keep their numbers so the blocking graph still reads.
+assumed but never gave a home. **Published 2026-07-22** to
+[mohitrawat-ai/agents](https://github.com/mohitrawat-ai/agents/issues) as
+issues #1–#16. GitHub numbers equal the local numbers, so "Blocked by" needed
+no rewrite. GitHub is now the tracking surface; this file stays as the drafted
+record. Struck issues keep their numbers so the blocking graph still reads.
 
 Build order is horizontal on purpose (ruled 2026-07-21). This is a rework of a
 working system in place, glue-first, so one half is always known-good.
