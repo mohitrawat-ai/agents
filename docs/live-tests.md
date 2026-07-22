@@ -206,3 +206,22 @@ deleted after verification.
 2. Seed 5 incident rows dated now (owner SQL), then tag a real alert.
    Expect: in-thread refusal, no 6th execution. Delete the seed rows.
 Ticks #11: channel allowlist; rate limit refuses at the 6th.
+
+## Batch C — Q&A (#12)
+
+### C1 — real question, real thread, real qid (paid) — **PASSED 2026-07-23**
+
+Evidence: question tagged in incident `80d7822d`'s thread. Router log
+`question enqueued` → qa-worker log `answered … in 32s (attempt 2,
+turns 7, $0.2166)` → `qa_answered` event row `{cost_usd: 0.2166,
+turns: 7, elapsed_s: 32}` (migration 005's grant exercised). Answer
+posted in-thread, cited a real qid, correct against the record (Mohit
+verified both). Bonus, unplanned: the live agent attempted command
+substitution, `>` and `>&` redirects, and `find` — the PreToolUse
+boundary denied all four in the worker log, then the agent answered
+through `read_record.py`. The §8a-C tool boundary is demonstrated in
+production, not only in tests.
+
+Ticks #12: the final acceptance box (real follow-up answered with a
+real qid), plus live confirmation of the allowlist deny, the timeout
+plumbing's happy path, and cost_usd recording.
