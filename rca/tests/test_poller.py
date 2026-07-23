@@ -96,7 +96,7 @@ def test_succeeded_with_stats():
         "SUCCEEDED", "s1", {"elapsed_s": 641, "turns": 67, "cost_usd": 2.02}, None
     )
     assert text == (
-        "✅ *Investigation finished* for `s1` in 641s, 67 turns, $2.02 "
+        "✅ *Investigation finished* for `s1` in 641s, 67 turns "
         "— document is ready."
     )
 

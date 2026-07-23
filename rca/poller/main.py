@@ -186,8 +186,8 @@ def terminal_text(
                 parts.append(f"{finished['elapsed_s']}s")
             if finished.get("turns") is not None:
                 parts.append(f"{finished['turns']} turns")
-            if isinstance(finished.get("cost_usd"), int | float):
-                parts.append(f"${finished['cost_usd']:.2f}")
+            # cost_usd stays in the record (P6 §6 accounting), not the
+            # channel (ruled 2026-07-23)
             if parts:
                 stats = f" in {', '.join(parts)}"
         return f"✅ *Investigation finished* for `{slug}`{stats} — document is ready."
