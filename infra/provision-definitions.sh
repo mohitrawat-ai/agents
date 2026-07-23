@@ -49,7 +49,8 @@ investigator_definition() {
       "image": "'"$ECR_URI"':latest",
       "essential": true,
       "environment": [
-        {"name": "NEW_RELIC_REGION", "value": "'"$NEW_RELIC_REGION"'"}'"$langfuse_host_env"'
+        {"name": "NEW_RELIC_REGION", "value": "'"$NEW_RELIC_REGION"'"},
+        {"name": "RCA_SESSION_BUCKET", "value": "rca-sessions-'"$ACCOUNT_ID"'"}'"$langfuse_host_env"'
       ],
       "secrets": [
         {"name": "RCA_DATABASE_URL",      "valueFrom": "'"$p"'/db/agent-url"},

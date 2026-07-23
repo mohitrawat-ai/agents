@@ -125,6 +125,22 @@ iam_roles() {
         "Resource": "'"$partner_arn"'"
       }]}'
 
+  # Capture layer (§8a-B amendment, 2026-07-23): the investigator mirrors
+  # session transcripts to the sessions bucket. Write + read-back only
+  # (read is the future resume path); no delete — retention is the
+  # bucket's lifecycle rule, never code.
+  "${AWS[@]}" iam put-role-policy --role-name rca-investigator \
+    --policy-name mirror-sessions --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+        {"Effect": "Allow",
+         "Action": ["s3:PutObject", "s3:GetObject"],
+         "Resource": "arn:aws:s3:::rca-sessions-'"$ACCOUNT_ID"'/*"},
+        {"Effect": "Allow",
+         "Action": "s3:ListBucket",
+         "Resource": "arn:aws:s3:::rca-sessions-'"$ACCOUNT_ID"'"}
+      ]}'
+
   ensure_role rca-sfn "$sfn_trust"
   "${AWS[@]}" iam put-role-policy --role-name rca-sfn \
     --policy-name run-investigation-task --policy-document '{
@@ -266,10 +282,37 @@ qa_queues() {
   log "queue rca-qa.fifo ($q_url)"
 }
 
+# --- Sessions bucket (§8a-B capture, 2026-07-23) ------------------------------
+# Transcript mirror target: one part object per SDK append, P2 §5's shape.
+# Private, and expired by lifecycle after 90 days — transcripts are raw
+# material for resume/steering/audit, not a permanent record; the record
+# proper lives in Postgres. No delete permission exists anywhere: expiry
+# is the only deletion path.
+
+sessions_bucket() {
+  local bucket="rca-sessions-${ACCOUNT_ID}"
+  "${AWS[@]}" s3api head-bucket --bucket "$bucket" 2>/dev/null \
+    || "${AWS[@]}" s3api create-bucket --bucket "$bucket" \
+         --create-bucket-configuration LocationConstraint="$RCA_REGION" >/dev/null
+  "${AWS[@]}" s3api put-public-access-block --bucket "$bucket" \
+    --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  "${AWS[@]}" s3api put-bucket-lifecycle-configuration --bucket "$bucket" \
+    --lifecycle-configuration '{
+      "Rules": [{
+        "ID": "expire-sessions",
+        "Status": "Enabled",
+        "Filter": {"Prefix": ""},
+        "Expiration": {"Days": 90}
+      }]}'
+  log "bucket $bucket (private, 90d lifecycle expiry)"
+}
+
 ssm_parameters
 ecr_and_logs
 iam_roles
 network
 queues
 qa_queues
+sessions_bucket
 log "foundation done"

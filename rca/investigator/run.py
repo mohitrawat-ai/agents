@@ -6,7 +6,8 @@ environment, `raw` is read from Postgres, and alert.json is materialized in
 a private workdir. D3's seam holds at the agent boundary: the agent still
 sees ../alert.json in, record out. Lifecycle events land in the events
 table; events.jsonl is gone. This is the one SDK-coupled box — swapping
-harnesses later means rewriting this file and hooks.py, nothing else.
+harnesses later means rewriting this file, hooks.py, and
+session_store.py, nothing else.
 
 Exit codes (the retry contract Step Functions keys on, #9):
     0  run finished
@@ -19,7 +20,10 @@ Exit codes (the retry contract Step Functions keys on, #9):
 A retry restarts from zero under attempt+1 and pays the full run again;
 the attempt column keeps the two row sets apart (§8a-B). Resume-from-
 where-it-stopped is ruled deferred with named triggers — see §8a-B before
-building it.
+building it. What IS built (capture, 2026-07-23): with RCA_SESSION_BUCKET
+set, the transcript mirrors to S3 via session_store.py, the session id
+lands in an instrument_note event, and dropped mirror batches are
+recorded — the raw material resume will need, and nothing more.
 
 Usage (env supplies scope, exactly like the tools):
     INCIDENT_ID=<uuid> ATTEMPT=1 uv run --env-file .env \
@@ -38,6 +42,7 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
 from hooks import make_post_tool_use_hook, make_pre_tool_use_hook
+from session_store import S3SessionStore
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
@@ -75,7 +80,15 @@ async def run(
 ):
     system_prompt = PROCEDURE.read_text().replace("__TOOLS_DIR__", str(TOOLS_DIR))
 
+    # Capture layer (§8a-B amendment, 2026-07-23): mirror the transcript to
+    # S3 when the bucket is configured; without it, today's behavior exactly
+    # (laptop and mock runs need no AWS). Mirror-not-replacement: local disk
+    # stays authoritative, a store outage never touches the run.
+    bucket = os.environ.get("RCA_SESSION_BUCKET")
+    store = S3SessionStore(bucket=bucket) if bucket else None
+
     options = ClaudeAgentOptions(
+        session_store=store,
         system_prompt=system_prompt,
         cwd=str(run_dir),
         allowed_tools=ALLOWED_TOOLS,
@@ -107,8 +120,26 @@ async def run(
 
     result = None
     async for message in query(prompt=prompt, options=options):
-        if type(message).__name__ == "ResultMessage":
+        name = type(message).__name__
+        if name == "ResultMessage":
             result = message
+        elif name == "MirrorErrorMessage":
+            # a dropped mirror batch must be visible in the record — a
+            # silent hole is invariant 6's least favorite shape
+            emit_best_effort(
+                "instrument_note",
+                kind="mirror_error",
+                error=str(getattr(message, "error", ""))[:300],
+            )
+        elif name == "SystemMessage" and message.subtype == "init":
+            # the session id is the future resume handle (§8a-B layer 2);
+            # instrument_note is never narrated, so this stays out of Slack
+            emit_best_effort(
+                "instrument_note",
+                kind="session",
+                session_id=message.data.get("session_id"),
+                mirrored=bool(store),
+            )
     return result
 
 

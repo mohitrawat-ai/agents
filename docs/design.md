@@ -243,11 +243,15 @@ This table is Q&A's primary input under §8a-C: `rca.md` goes into the prompt.
 | `rca_service` | `SELECT`/`INSERT`/`UPDATE` on operational state; `SELECT` on evidence, including `documents` — Q&A reads `rca.md` through this role (§8a-C) |
 | `rca_poller` | `SELECT` on `events`; `SELECT` on `incidents` (it needs `channel`/`thread_ts` to post, and the active list to loop over — P9 §5 omits this); `UPDATE` on `narrated_through` only |
 
-### S3 — session mirror — **deferred, §8a-B**
+### S3 — session mirror — **capture built 2026-07-23; resume deferred, §8a-B**
 
-Not built. Nothing in the build order below depends on it, and no S3 bucket
-ships until a §8a-B trigger fires. The design below is P2 §5's, kept intact for
-when it does.
+The capture half is live: `investigator/session_store.py` mirrors
+transcripts to `rca-sessions-<account>` in exactly the shape below, via
+the Python SDK's now-native `session_store` option (§8a-B amendment,
+2026-07-23). Resume — `load()` feeding a `resume=` call — remains
+deferred behind §8a-B's named triggers. The design below is P2 §5's,
+unchanged; it survived contact with the vendor: Anthropic's reference S3
+adapter ships the same part-object shape.
 
 `s3://…/<run-id>/00001.jsonl`, one new object per **15-second** flush. S3 has no
 append, so the adapter adds keys rather than rewriting. `load()` lists the
@@ -592,6 +596,36 @@ P11 §4's finding still stands but **no longer makes the deferred work cheap**
 ships in the TypeScript SDK only. In Python the adapter is a build, not a copy.
 Read the TypeScript example as a spec if the trigger fires. This is the largest
 single cost §8a-F accepts, and it is unpaid until then.
+
+**Amended 2026-07-23: the CAPTURE slice of the deferred row is built;
+resume stays deferred.** Two facts changed since the ruling. The Python
+SDK now ships first-class `SessionStore` support — the Protocol, the
+`session_store` option, and the conformance suite in
+`claude_agent_sdk.testing` — so "a build, not a copy" fell from the
+adapter's price: `investigator/session_store.py` is ~100 lines against
+the SDK's own contract, P2 §5's part-object shape unchanged. And the
+transcript's value stopped being resume-only: steering and
+context-inspection were named as product wants (2026-07-23 chat, after
+the first live incident-channel day), and both need the transcript
+captured whether or not resume is ever built.
+
+What shipped: the adapter (`append` + `load` only, duck-typed; optional
+methods deliberately absent — delete is a no-op, retention is the
+bucket's 90-day lifecycle rule); `RCA_SESSION_BUCKET` gating in run.py
+(unset = exactly the old behavior); the session id stamped into an
+`instrument_note` event (the future resume handle, one SELECT away);
+`mirror_error` batches recorded the same way (a hole in the mirror must
+be visible in the record — invariant 6); bucket + IAM in
+provision-foundation.sh (PutObject/GetObject/ListBucket, no delete
+anywhere). Mirror-not-replacement per the SDK contract: local disk stays
+authoritative, a store outage never touches the run.
+
+What did NOT ship, on purpose: `resume=` is never passed; Step Functions
+retries still restart from zero under attempt+1; the retry-semantics
+design (same attempt or new? workdir files are not the transcript) is
+untouched. The named triggers above still gate that work. Steering
+remains ungated design work — it collides with invariant 7 and needs its
+own ruling.
 
 #### C — ruled 2026-07-20: no export. A read CLI, `rca.md` in the prompt, and Q&A loses `Bash`.
 
