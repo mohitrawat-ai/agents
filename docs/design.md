@@ -367,6 +367,10 @@ All three §8a-A conditions land here: the `DO UPDATE` upsert, an execution
 input of `{incident_id}` and nothing else, and **no Slack post from the
 router** — the *"investigating…"* ack belongs to the poller from Slice 4.
 
+> **⚠ This slice reads through §8g (2026-07-23).** Routing is now by
+> channel, not thread; the router posts the incident-channel setup; the
+> ack remains the poller's. §8f already moved Q&A off this loop.
+
 **Q&A ships in this slice too**, since the router answers in-process: `rca.md`
 inlined in the prompt, `read_record.py` for evidence with the incident id taken
 from the subprocess environment and any `--incident` flag ignored, and a
@@ -509,6 +513,12 @@ redelivery posts it twice. **Move it to the poller**, off the `run_started`
 row. The ack then becomes idempotent by the same cursor that makes every other
 narration line idempotent, and the router is left doing exactly the two calls
 above — which is what makes this argument true rather than nearly true.
+
+> **⚠ Condition 3 amended by §8g (2026-07-23).** The alert path posts
+> again — the channel-per-incident setup. What condition 3 protected
+> (crash convergence without duplicate side effects) is held by §8g's
+> deterministic channel name and MOVE commit point instead. The
+> *"investigating…"* ack itself stays the poller's.
 
 **The one path that does not converge, and its fix.** A *persistent*
 `StartExecution` failure — a bad IAM policy, a state machine ARN that moved —
@@ -1039,6 +1049,97 @@ earning its keep separately.
    invariant 6's shape. The worker now posts a failure message on the
    receive that matches maxReceiveCount, best-effort, and the message
    still lands in the DLQ as the ops record.
+
+### 8g. Channel-per-incident — ruled 2026-07-23
+
+**The finding (live UX, ruled by Mohit in chat):** everything about an
+incident lands in one thread on the central channel — narration, question
+acks, answers, the terminal message. The thread is unreadable in real
+use. This is an observed failure, which is the mantra's bar for change.
+
+**Ruled: an alert gets its own public channel.** The flow:
+
+1. A user tags the bot on an alert in a central (allowlisted) channel.
+2. The router creates **`rca-<incident id>`**, invites the tagging user,
+   posts the alert text as the channel's first message, and posts one
+   link back in the origin thread.
+3. The poller narrates in the alert copy's thread — unchanged code; the
+   incident row's `channel`/`thread_ts` now point there.
+4. Questions are separate tagged messages in the incident channel; each
+   answer lands in its question's own thread. `qa/worker.py` unchanged.
+
+**Routing is by channel, never by thread** (amends #11's rule): a
+mention in an allowlisted channel is an alert; a mention in a channel
+matching an `incidents.channel` row is a question; anything else drops.
+The alert-vs-question ambiguity that needed #11's event_id gate
+dissolves — the two now arrive from different channels.
+
+**This amends §8a-A condition 3.** The alert path posts again. What the
+condition protected — crash-then-redelivery convergence without a
+duplicated paid run — is held by three mechanisms instead:
+
+1. **The channel name is the idempotency key.** `rca-<incident id>` is
+   deterministic; Slack channel names are unique; a retry's
+   `conversations.create` fails `name_taken` and the id is recovered by
+   name from `conversations.list`. Taken-but-unlistable raises to the
+   DLQ — never a silent second channel.
+2. **MOVE is the setup commit point.** The `UPDATE` flipping the row's
+   `channel`/`thread_ts` from the origin thread to the incident channel
+   runs *after* every Slack post. Crash before it: redelivery re-runs
+   setup, worst case a duplicate alert copy or link-back — invariant 6's
+   loud cheap error. Crash after it: the upsert's `RETURNING channel`
+   comes back ≠ the event's channel, setup is skipped, and the
+   idempotent `StartExecution` converges as before.
+3. **The rate check is skipped on redelivery** (the event_id already has
+   a row): a full window must not strand a half-set-up incident.
+
+| Crash at | Redelivery does | Converges |
+|---|---|---|
+| before the upsert | re-runs, proceeds | ✓ |
+| after upsert, before create | `RETURNING channel` = origin → setup runs | ✓ |
+| after create, before MOVE | `name_taken` → id recovered; posts may duplicate | ✓ |
+| after MOVE, before start | `RETURNING channel` = incident → skip to start | ✓ |
+| after start | duplicate execution name is a no-op | ✓ |
+
+**The origin thread stays queryable through `raw`.** The row's columns
+move at MOVE, but `raw`'s `channel`/`thread_ts` keep the origin forever.
+A re-tag on a claimed alert thread (different event_id, same origin) is
+caught by that lookup and answered with a pointer to the incident
+channel — not a duplicate run.
+
+**Rejected:**
+
+- *Status quo (everything in one thread)* — the observed failure.
+- *A migration adding incident-channel columns* — the existing
+  `channel`/`thread_ts` columns already mean "where the system posts";
+  the origin survives in `raw`. A migration buys nothing.
+- *Any message in the incident channel is a question* — needs a
+  `message.channels` subscription and makes ordinary discussion trigger
+  paid calls. Tagging stays the contract.
+- *Archive-on-terminal* — deferred, no named failure yet. Channels
+  accumulate; revisit when the sidebar hurts.
+- *Private channels* — public is simpler (no `groups:write`, no
+  membership friction). Revisit if alert content demands it.
+
+**Accepted costs.** A mid-setup redelivery may duplicate the alert copy
+or link-back (loud, cheap). A question asked in the incident channel in
+the seconds before MOVE commits finds no row and drops; the asker
+re-asks. The `name_taken` recovery walks `conversations.list` — rare
+path, small workspace. Channels accumulate unarchived.
+
+**Consequences:**
+
+- `service/router.py` reshaped; `tests/test_router.py` proves each crash
+  window above.
+- **Slack scope: add `channels:manage`** (create + invite), reinstall
+  the app. Manifest change, Mohit's to click.
+- **No migration.**
+- Slice 5's routing description and §8a-A condition 3 read through this
+  section (⚠ markers inline there).
+- Poller, qa-worker, ingress: zero changes.
+- Live checks: Batch B (docs/live-tests.md) re-run required after
+  deploy, plus a new check — kill the router between create and MOVE,
+  confirm one channel and one run.
 
 ---
 
