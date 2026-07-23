@@ -61,6 +61,10 @@ Rules:
   ASCII chart inside a ``` code block, built only from numbers in the record:
   labeled bars or a sparkline, at most ~50 characters wide, units and qids
   stated. Never interpolate points the record does not contain.
+- If the question asks for a timeline or sequence of events, draw the
+  milestones on an ASCII time axis in a ``` code block — one tick per event,
+  timestamp and a short label each, in time order. Only events the record
+  states; cite qids where the event came from evidence.
 
 --- rca.md ---
 """
