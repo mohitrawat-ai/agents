@@ -217,12 +217,24 @@ def terminal_text(
 
 def post(slack: WebClient, inc: dict, text: str) -> None:
     """The one Slack write path: append to the incident's thread, truncated
-    to Slack's hard limit so an oversize milestone cannot wedge the cursor."""
+    to Slack's hard limit so an oversize milestone cannot wedge the cursor.
+
+    Each message carries a divider block so consecutive entries separate
+    visually (ruled 2026-07-23, cosmetic). Section blocks cap at 3000
+    chars against 40k for plain text; a long line (timeline summary)
+    falls back to plain rather than truncating harder — `text` doubles
+    as the notification fallback either way."""
     if len(text) > MAX_POST_CHARS:
         text = text[:MAX_POST_CHARS] + " …[truncated]"
-    slack.chat_postMessage(
-        channel=inc["channel"], thread_ts=inc["thread_ts"], text=text
-    )
+    kwargs: dict = {
+        "channel": inc["channel"], "thread_ts": inc["thread_ts"], "text": text,
+    }
+    if len(text) <= 3000:
+        kwargs["blocks"] = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+            {"type": "divider"},
+        ]
+    slack.chat_postMessage(**kwargs)
 
 
 def publish_canvas(conn: psycopg.Connection, slack: WebClient, inc: dict) -> None:
@@ -238,10 +250,14 @@ def publish_canvas(conn: psycopg.Connection, slack: WebClient, inc: dict) -> Non
     if not doc:
         print(f"[poller] doc_ready but no rca.md row: {inc['id']}", file=sys.stderr)
         return
+    content = doc["content"]
+    if not content.lstrip().startswith("# "):
+        # channel canvases have no API title field; the H1 is the title
+        content = f"# RCA: {inc['slug']}\n\n{content}"
     try:
         slack.conversations_canvases_create(
             channel_id=inc["channel"],
-            document_content={"type": "markdown", "markdown": doc["content"]},
+            document_content={"type": "markdown", "markdown": content},
         )
         post(slack, inc, "📄 Full report is in this channel's canvas.")
     except SlackApiError as e:

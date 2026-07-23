@@ -1,7 +1,8 @@
 """Q&A over one incident's record: (incident, question) -> (answer, cost).
 
 Rewritten 2026-07-22 (issue #12, §8a-C). Replaces the 2026-07-18 folder
-version: no export, no incident tmpdir, no charts. `rca.md` is inlined in
+version: no export, no incident tmpdir, no chart files (ASCII charts in
+answer text are fine — ruled 2026-07-23). `rca.md` is inlined in
 the system prompt, evidence comes back through tools/read_record.py, and
 the agent's tool surface is `Bash` allowlisted to that one executable —
 no Read, no Write (§8a-C, P5's injection threat model).
@@ -56,6 +57,10 @@ Rules:
   guess beyond the data, never run new telemetry queries.
 - Cite query ids like [q07] for every number you quote.
 - Keep answers short and operational — Slack-thread sized, not documents.
+- If the question asks for a chart, trend, or distribution, draw a compact
+  ASCII chart inside a ``` code block, built only from numbers in the record:
+  labeled bars or a sparkline, at most ~50 characters wide, units and qids
+  stated. Never interpolate points the record does not contain.
 
 --- rca.md ---
 """

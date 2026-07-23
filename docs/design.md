@@ -1160,8 +1160,11 @@ argument as the oversize post: a raise would wedge the cursor on the
 doc_ready row forever, and the document's durable home is the DB — the
 canvas is a rendering. One channel holds one canvas, so the duplicate
 create fails `channel_canvas_already_exists` and the repost path
-converges free. Narration lines gained emoji/bold prefixes the same day
-— cosmetic, not ruled.
+converges free. Narration lines gained emoji/bold prefixes, per-message
+divider blocks, and a canvas H1 title the same day — cosmetic, not
+ruled. Also 2026-07-23: Q&A may draw ASCII charts inside its answer
+text. §8a-C's "no charts" removed the chart-file pipeline and its
+tmpdir, not chart-shaped text — the tool surface is untouched.
 
 ---
 
