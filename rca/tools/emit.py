@@ -11,7 +11,10 @@ Sink moved from events.jsonl to Postgres 2026-07-21 (issue #4, P2 §1). Same
 CLI surface. One addition, ruled in design.md §5: on doc_ready this CLI also
 uploads the run dir's rca.md into the documents table — emit does the
 insert, not the agent, which keeps the tool boundary (invariant 2) true for
-documents as well.
+documents as well. Ruled 2026-07-23: ../feedback.md rides the same upload
+when present — the workdir dies with the container, and the documents table
+already reserves its slot. Optional where rca.md is required: a missing
+verdict slot must not fail the run's terminal emit.
 
 Usage:
     python3 tools/emit.py --dir <run-dir> <event> ['<json object of fields>']
@@ -52,23 +55,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    doc = None
+    docs: list[tuple[str, str]] = []
     if args.event == "doc_ready":
         doc_path = Path(args.dir) / "rca.md"
         if not doc_path.is_file():
             print(f"doc_ready but no rca.md at {doc_path}", file=sys.stderr)
             return 2
-        doc = doc_path.read_text()
+        docs.append(("rca.md", doc_path.read_text()))
+        # the devops verdict slot, one level up (procedure.md close-out
+        # step 1). Optional: its absence must not fail the terminal emit.
+        feedback_path = Path(args.dir).resolve().parent / "feedback.md"
+        if feedback_path.is_file():
+            docs.append(("feedback.md", feedback_path.read_text()))
 
     with db.connect() as conn, conn.transaction():
         db.insert_event(conn, args.event, fields)
-        if doc is not None:
-            db.insert_document(conn, "rca.md", doc)
+        for name, content in docs:
+            db.insert_document(conn, name, content)
 
     mirror_event(Path(args.dir), args.event, fields)
     print(f"emitted {args.event} -> postgres")
-    if doc is not None:
-        print("uploaded rca.md -> documents")
+    for name, _ in docs:
+        print(f"uploaded {name} -> documents")
     return 0
 
 
