@@ -47,8 +47,34 @@ def test_run_failed_posts_reason():
 
 
 def test_unnarrated_kinds_return_none():
-    for event in ("tool_call", "instrument_note", "run_finished"):
+    for event in ("tool_call", "instrument_note", "run_finished", "qa_answered"):
         assert format_event(event, 1, {}) is None
+
+
+def test_tool_call_with_purpose_posts_querying_line():
+    """§8g amendment (2026-07-23): telemetry calls narrate their --purpose
+    so the incident channel is not silent through the query phase."""
+    cmd = ('python3 /app/tools/cloudwatch/aws_log.py --log-dir . '
+           '--purpose "check ELB-5XX alarm history" cloudwatch '
+           'describe-alarm-history')
+    text = format_event("tool_call", 1, {"tool": "Bash", "command": cmd})
+    assert text == "Querying: check ELB-5XX alarm history"
+
+
+def test_tool_call_purpose_single_quotes_also_posts():
+    cmd = "python3 nrql_log.py --purpose 'baseline error rate' 'SELECT ...'"
+    text = format_event("tool_call", 1, {"tool": "Bash", "command": cmd})
+    assert text == "Querying: baseline error rate"
+
+
+def test_tool_call_mechanics_stay_silent():
+    for payload in (
+        {"tool": "Read", "file_path": "/app/tools/newrelic/NR_NOTES.md"},
+        {"tool": "Glob", "pattern": "*"},
+        {"tool": "Bash", "command": "python3 /app/tools/newrelic/nrql_log.py --help"},
+        {"tool": "Bash", "command": None},  # malformed: must not throw
+    ):
+        assert format_event("tool_call", 1, payload) is None
 
 
 def test_format_event_is_total_on_malformed_payloads():

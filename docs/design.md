@@ -1141,6 +1141,17 @@ path, small workspace. Channels accumulate unarchived.
   deploy, plus a new check — kill the router between create and MOVE,
   confirm one channel and one run.
 
+**Amended 2026-07-23 (first live run of this flow): purpose lines
+narrate.** D6 (design-v2) kept tool_call volume out of Slack; its reason
+was the shared alert thread, which this section retired. The first live
+run showed the cost: 8 minutes of query phase with zero visible
+activity in a channel that exists to be watched. Ruled: a tool_call
+whose command carries the agent's own `--purpose` string posts as a
+`Querying: <purpose>` line (23 of 41 tool_calls in that run); mechanics
+calls — Read, Glob, `--help` probes, Write — stay silent. Poller-only
+change, same cursor idempotency. D6 stays in force for everything the
+purpose filter drops.
+
 ---
 
 ## 9. Reading order for a fresh session

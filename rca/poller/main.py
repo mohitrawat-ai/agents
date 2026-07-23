@@ -7,8 +7,11 @@ always-on Fargate task — exactly one (P8 §4): two pollers would post every
 line twice, so the Service pins deploys to stop-then-start.
 
 Two authorities (P8 §5). The events table says what the investigation
-found — narrated by row-id cursor, one appended message per milestone;
-tool_call and instrument_note are not posted. DescribeExecution says
+found — narrated by row-id cursor, one appended message per milestone.
+A tool_call with a --purpose string posts as a "Querying:" line (§8g
+amendment 2026-07-23 — the incident channel absorbs the volume D6 kept
+out of the shared thread); purposeless tool_calls and instrument_note
+do not post. DescribeExecution says
 whether the run is over, and how — the terminal message. A hard task death
 writes no run_failed row, so the table alone would wait forever.
 
@@ -33,6 +36,7 @@ ARN rather than carried as a fourth variable.
 """
 
 import os
+import re
 import sys
 import time
 import traceback
@@ -57,6 +61,11 @@ NEVER_STARTED_GRACE_S = 1800
 # Slack rejects chat.postMessage text over 40k chars; an oversize milestone
 # must not wedge the cursor (review 2026-07-22).
 MAX_POST_CHARS = 39_000
+
+# A telemetry tool_call carries the agent's own --purpose string; that line
+# narrates (§8g amendment, 2026-07-23 — D6 relaxed for the incident channel).
+# Mechanics (Read, Glob, --help probes, Write) have no purpose and stay silent.
+PURPOSE = re.compile(r"--purpose\s+(?:\"([^\"]*)\"|'([^']*)')")
 
 # run.py's exit-code contract (#7), rendered for the terminal message.
 EXIT_LABELS = {
@@ -141,7 +150,12 @@ def format_event(event: str, attempt: int, payload: dict) -> str | None:
         return f"*Verdict:* {payload.get('verdict', '(missing)')}"
     if event == "run_failed":
         return f"Run failed: {payload.get('reason', 'unknown')}"
-    return None  # tool_call, instrument_note, run_finished
+    if event == "tool_call":
+        m = PURPOSE.search(payload.get("command") or "")
+        if m:
+            return f"Querying: {m.group(1) or m.group(2)}"
+        return None  # a mechanics call: Read, Glob, --help, Write
+    return None  # instrument_note, run_finished, qa_answered
 
 
 def terminal_text(
