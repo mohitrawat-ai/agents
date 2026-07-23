@@ -18,7 +18,7 @@ from main import EXIT_LABELS, format_event, terminal_text
 
 def test_ack_on_run_started():
     assert format_event("run_started", 1, {}) == (
-        "Investigating — I'll post here as I go."
+        "🔍 *Investigating* — I'll post here as I go."
     )
 
 
@@ -32,18 +32,19 @@ def test_hypothesis_verbs_and_qids():
     formed = format_event(
         "hypothesis", 1, {"status": "formed", "claim": "ALB-side", "qids": ["q03"]}
     )
-    assert formed == "Hypothesis: ALB-side (q03)"
+    assert formed == "💡 Hypothesis: ALB-side (q03)"
     killed = format_event("hypothesis", 1, {"status": "killed", "claim": "DB lock"})
-    assert killed == "Ruled out: DB lock"
+    assert killed == "❌ Ruled out: DB lock"
 
 
 def test_doc_ready_posts_verdict():
-    assert format_event("doc_ready", 1, {"verdict": "ALB 5XX"}) == "*Verdict:* ALB 5XX"
+    text = format_event("doc_ready", 1, {"verdict": "ALB 5XX"})
+    assert text == "📄 *Verdict:* ALB 5XX"
 
 
 def test_run_failed_posts_reason():
     text = format_event("run_failed", 1, {"reason": "budget cap $5.00 hit"})
-    assert text == "Run failed: budget cap $5.00 hit"
+    assert text == "⚠️ Run failed: budget cap $5.00 hit"
 
 
 def test_unnarrated_kinds_return_none():
@@ -58,13 +59,13 @@ def test_tool_call_with_purpose_posts_querying_line():
            '--purpose "check ELB-5XX alarm history" cloudwatch '
            'describe-alarm-history')
     text = format_event("tool_call", 1, {"tool": "Bash", "command": cmd})
-    assert text == "Querying: check ELB-5XX alarm history"
+    assert text == "🔎 Querying: check ELB-5XX alarm history"
 
 
 def test_tool_call_purpose_single_quotes_also_posts():
     cmd = "python3 nrql_log.py --purpose 'baseline error rate' 'SELECT ...'"
     text = format_event("tool_call", 1, {"tool": "Bash", "command": cmd})
-    assert text == "Querying: baseline error rate"
+    assert text == "🔎 Querying: baseline error rate"
 
 
 def test_tool_call_mechanics_stay_silent():
@@ -95,14 +96,14 @@ def test_succeeded_with_stats():
         "SUCCEEDED", "s1", {"elapsed_s": 641, "turns": 67, "cost_usd": 2.02}, None
     )
     assert text == (
-        "Investigation finished for `s1` in 641s, 67 turns, $2.02 "
+        "✅ *Investigation finished* for `s1` in 641s, 67 turns, $2.02 "
         "— document is ready."
     )
 
 
 def test_succeeded_without_stats_row():
     text = terminal_text("SUCCEEDED", "s1", None, None)
-    assert text == "Investigation finished for `s1` — document is ready."
+    assert text == "✅ *Investigation finished* for `s1` — document is ready."
 
 
 def test_failed_renders_exit_code_label():

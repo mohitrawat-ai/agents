@@ -250,6 +250,14 @@ def test_poller_reads_events_and_incidents(poller, incident):
     ).fetchone()
 
 
+def test_poller_reads_documents(poller, incident):
+    """Migration 006 (§8g amendment 2026-07-23): the canvas render on
+    doc_ready needs rca.md's content. SELECT only."""
+    poller.execute(
+        "SELECT content FROM documents WHERE incident_id = %s", (incident,)
+    ).fetchall()
+
+
 def test_poller_updates_only_its_own_columns(poller, incident):
     """Cursor (002) and completion marker (004, #10) — the columns that
     record the poller's own actions. Everything else stays denied."""

@@ -1152,6 +1152,17 @@ calls — Read, Glob, `--help` probes, Write — stay silent. Poller-only
 change, same cursor idempotency. D6 stays in force for everything the
 purpose filter drops.
 
+**Also ruled 2026-07-23: `rca.md` renders as the incident channel's
+canvas.** On doc_ready the poller reads the newest `rca.md` from
+`documents` (migration 006: SELECT for `rca_poller`) and creates the
+channel canvas (new scope `canvases:write`). Best-effort by the same
+argument as the oversize post: a raise would wedge the cursor on the
+doc_ready row forever, and the document's durable home is the DB — the
+canvas is a rendering. One channel holds one canvas, so the duplicate
+create fails `channel_canvas_already_exists` and the repost path
+converges free. Narration lines gained emoji/bold prefixes the same day
+— cosmetic, not ruled.
+
 ---
 
 ## 9. Reading order for a fresh session

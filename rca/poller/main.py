@@ -47,6 +47,7 @@ import psycopg
 from botocore.exceptions import ClientError
 from psycopg.rows import dict_row
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 POLL_S = 30.0  # ruled 2026-07-22: milestones land ~48s apart (P8 §1), 5s bought nothing
 
@@ -90,6 +91,16 @@ SELECT id, attempt, event, payload
  ORDER BY id
 """
 
+# The document for the channel canvas: newest attempt's rca.md.
+# Needs migration 006 (GRANT SELECT ON documents TO rca_poller).
+LAST_DOC = """\
+SELECT content
+  FROM documents
+ WHERE incident_id = %s AND name = 'rca.md'
+ ORDER BY id DESC
+ LIMIT 1
+"""
+
 # Scoped to the newest attempt (review 2026-07-22): attempt 1's run_failed
 # must not label a terminal where attempt 2 died hard and wrote nothing —
 # no row on the last attempt is exactly the hard-death signal (P8 §5).
@@ -124,36 +135,36 @@ def format_event(event: str, attempt: int, payload: dict) -> str | None:
     if event == "run_started":
         if attempt > 1:
             return (
-                f"Restarting after an infrastructure failure "
+                f"🔁 Restarting after an infrastructure failure "
                 f"(attempt {attempt})."
             )
-        return "Investigating — I'll post here as I go."
+        return "🔍 *Investigating* — I'll post here as I go."
     if event == "hypothesis":
         verb = {
-            "formed": "Hypothesis",
-            "supported": "Supported",
-            "killed": "Ruled out",
-        }.get(payload.get("status"), "Hypothesis")
+            "formed": "💡 Hypothesis",
+            "supported": "✅ Supported",
+            "killed": "❌ Ruled out",
+        }.get(payload.get("status"), "💡 Hypothesis")
         raw_qids = payload.get("qids")
         qids = ""
         if isinstance(raw_qids, list) and raw_qids:
             qids = f" ({', '.join(str(q) for q in raw_qids)})"
         return f"{verb}: {payload.get('claim', '')}{qids}"
     if event == "timeline_settled":
-        return f"Timeline settled:\n{payload.get('summary', '')}"
+        return f"📋 *Timeline settled*\n{payload.get('summary', '')}"
     if event == "self_check":
         return (
-            f"Self-check: {payload.get('claims_checked', '?')} claims verified, "
-            f"{payload.get('fixed', 0)} fixed."
+            f"🧪 Self-check: {payload.get('claims_checked', '?')} claims "
+            f"verified, {payload.get('fixed', 0)} fixed."
         )
     if event == "doc_ready":
-        return f"*Verdict:* {payload.get('verdict', '(missing)')}"
+        return f"📄 *Verdict:* {payload.get('verdict', '(missing)')}"
     if event == "run_failed":
-        return f"Run failed: {payload.get('reason', 'unknown')}"
+        return f"⚠️ Run failed: {payload.get('reason', 'unknown')}"
     if event == "tool_call":
         m = PURPOSE.search(payload.get("command") or "")
         if m:
-            return f"Querying: {m.group(1) or m.group(2)}"
+            return f"🔎 Querying: {m.group(1) or m.group(2)}"
         return None  # a mechanics call: Read, Glob, --help, Write
     return None  # instrument_note, run_finished, qa_answered
 
@@ -179,26 +190,26 @@ def terminal_text(
                 parts.append(f"${finished['cost_usd']:.2f}")
             if parts:
                 stats = f" in {', '.join(parts)}"
-        return f"Investigation finished for `{slug}`{stats} — document is ready."
+        return f"✅ *Investigation finished* for `{slug}`{stats} — document is ready."
     if status == "TIMED_OUT":
         return (
-            f"Investigation FAILED for `{slug}` — the state machine's "
+            f"❌ Investigation FAILED for `{slug}` — the state machine's "
             f"2-hour timeout hit."
         )
     if status == "ABORTED":
-        return f"Investigation FAILED for `{slug}` — the execution was aborted."
+        return f"❌ Investigation FAILED for `{slug}` — the execution was aborted."
     # FAILED
     if failed:
         code = failed.get("exit_code")
         label = EXIT_LABELS.get(code, f"exit {code}")
         reason = failed.get("reason", "unknown")
-        return f"Investigation FAILED for `{slug}` — {label}: {reason}"
+        return f"❌ Investigation FAILED for `{slug}` — {label}: {reason}"
     # No run_failed row on the last attempt covers two causes run.py cannot
     # tell apart from here: a hard infrastructure death, and a startup
     # failure (exit 2) — most startup paths cannot write a row because the
     # DB or the incident row is the thing that is broken (review 2026-07-22).
     return (
-        f"Investigation FAILED for `{slug}` — the task wrote no failure row: "
+        f"❌ Investigation FAILED for `{slug}` — the task wrote no failure row: "
         f"a hard infrastructure death, or a startup failure (exit 2). "
         f"Check the /ecs/rca logs."
     )
@@ -212,6 +223,33 @@ def post(slack: WebClient, inc: dict, text: str) -> None:
     slack.chat_postMessage(
         channel=inc["channel"], thread_ts=inc["thread_ts"], text=text
     )
+
+
+def publish_canvas(conn: psycopg.Connection, slack: WebClient, inc: dict) -> None:
+    """Render rca.md as the incident channel's canvas (ruled 2026-07-23).
+
+    Best-effort on purpose: a raise here would wedge the cursor on the
+    doc_ready row and repost the verdict every tick forever — the same
+    wedge class as the oversize post. The document's home is the DB; the
+    canvas is a rendering. One channel holds one canvas, so a duplicate
+    create fails `channel_canvas_already_exists` — idempotency for free.
+    """
+    doc = conn.execute(LAST_DOC, (inc["id"],)).fetchone()
+    if not doc:
+        print(f"[poller] doc_ready but no rca.md row: {inc['id']}", file=sys.stderr)
+        return
+    try:
+        slack.conversations_canvases_create(
+            channel_id=inc["channel"],
+            document_content={"type": "markdown", "markdown": doc["content"]},
+        )
+        post(slack, inc, "📄 Full report is in this channel's canvas.")
+    except SlackApiError as e:
+        if e.response["error"] == "channel_canvas_already_exists":
+            return  # a prior tick made it; the repost path lands here
+        print(f"[poller] canvas failed: {e.response['error']}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 — rendering never wedges narration
+        print(f"[poller] canvas failed: {exc}", file=sys.stderr)
 
 
 def narrate(conn: psycopg.Connection, slack: WebClient, inc: dict) -> None:
@@ -228,6 +266,8 @@ def narrate(conn: psycopg.Connection, slack: WebClient, inc: dict) -> None:
             text = format_event(row["event"], row["attempt"], row["payload"] or {})
             if text is not None:
                 post(slack, inc, text)
+            if row["event"] == "doc_ready":
+                publish_canvas(conn, slack, inc)
             last = row["id"]
     finally:
         if last != inc["narrated_through"]:
@@ -272,7 +312,7 @@ def check_execution(
             conn,
             slack,
             inc,
-            f"Investigation never started for `{inc['slug']}` — no execution "
+            f"❌ Investigation never started for `{inc['slug']}` — no execution "
             f"exists {int(age.total_seconds() // 60)} minutes after the "
             f"incident was recorded. StartExecution is likely failing; "
             f"check the router logs and the DLQ (§8a-A).",
