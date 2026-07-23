@@ -50,11 +50,11 @@ deliberately slower is correct.
   lifecycle is the ONLY deletion path. **Resume/steering deliberately
   NOT built** — `resume=` never passed, retries still restart from
   zero; §8a-B's named triggers still gate.
-- **Possibly still pending on Mohit's side** (confirm before assuming):
-  `provision-foundation.sh` (bucket+IAM), `provision-definitions.sh`
-  (investigator task def gains RCA_SESSION_BUCKET), image push. The
-  capture live-check (`aws s3 ls` + the instrument_note SELECT) runs on
-  the next investigation after those.
+- **Capture infra is provisioned and verified** (2026-07-23, end of
+  session): bucket exists, `mirror-sessions` policy on rca-investigator,
+  task def rev 8 carries `RCA_SESSION_BUCKET`, image pushed. The capture
+  live-check (`aws s3 ls` on the sessions prefix + the instrument_note
+  SELECT) runs on the next real investigation.
 - Tests: 59 green without DB env; `test_tools_db` + `test_schema` need
   `.env` DSNs (schema suite gained poller-reads-documents).
 - Issues: #13 (liveness) and #15 (tracker) still open — untouched today.
