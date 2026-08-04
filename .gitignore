@@ -9,3 +9,6 @@ __pycache__/
 
 # os
 .DS_Store
+
+# local tooling artifacts
+.playwright-mcp/

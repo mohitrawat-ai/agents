@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ingren RCA — AWS access setup</title>
+<style>
+:root{
+  --bg:#EEF2F6; --surface:#FFFFFF; --panel:#F7FAFC;
+  --ink:#13263A; --muted:#5C7186; --faint:#64788A;
+  --blue:#1E5AA8; --blue-soft:#DCE8F6;
+  --bad:#B3382F; --bad-soft:#F7E4E2; --good:#2E7D4F; --good-soft:#E2F0E7;
+  --warn:#9A6A14; --warn-soft:#F6ECD8;
+  --line:#D7E0E8; --line2:#E7EDF3;
+  --display:"Avenir Next","Avenir","Segoe UI",system-ui,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+a{color:var(--blue)}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+.bar{position:sticky;top:0;z-index:10;background:rgba(238,242,246,.92);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;align-items:center;gap:18px;padding:10px 28px}
+.bar b{font-family:var(--display);font-weight:600;letter-spacing:.02em}
+.bar nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+.bar nav a{color:var(--muted);text-decoration:none;font:600 11px/1 var(--mono);
+  letter-spacing:.06em;padding:8px 10px;border-radius:6px}
+.bar nav a:hover{background:var(--blue-soft);color:var(--blue)}
+.bar nav a:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+header.hero{padding:46px 0 8px}
+.eyebrow{font:700 11px/1 var(--mono);letter-spacing:.18em;color:var(--blue);margin:0 0 14px;text-transform:uppercase}
+h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,4vw,42px);line-height:1.12;
+  letter-spacing:-.01em;margin:0 0 14px;max-width:22ch}
+.lede{color:var(--muted);max-width:78ch;margin:0 0 6px;font-size:16px}
+.lede b{color:var(--ink)}
+.verdict{display:inline-flex;align-items:center;gap:10px;margin:18px 0 0;padding:10px 16px;
+  border-radius:8px;background:var(--good-soft);border:1px solid #BFDCC9;color:var(--good);
+  font:600 13px/1.4 var(--body)}
+.verdict .dot{width:10px;height:10px;border-radius:50%;background:var(--good);flex:none}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:30px 0 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.tile .n{font-family:var(--display);font-weight:600;font-size:27px;letter-spacing:-.01em}
+.tile .n small{font-size:15px;color:var(--faint);font-weight:500}
+.tile p{margin:4px 0 0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.tile.good .n{color:var(--good)}
+
+section{margin:54px 0;scroll-margin-top:86px}
+.sec-eyebrow{font:700 11px/1 var(--mono);letter-spacing:.18em;color:var(--faint);text-transform:uppercase;margin:0 0 8px}
+h2{font-family:var(--display);font-weight:600;font-size:25px;letter-spacing:-.01em;margin:0 0 10px}
+.sec-sub{color:var(--muted);max-width:82ch;margin:0 0 20px}
+.sec-sub b{color:var(--ink)}
+.sec-sub code, td code{font:500 12px var(--mono);background:var(--panel);border:1px solid var(--line2);
+  padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+.plate{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;
+  box-shadow:0 1px 2px rgba(19,38,58,.04)}
+.plate + .plate{margin-top:14px}
+.plate-head{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 14px;align-items:baseline}
+.plate-head .t{font-weight:600}
+.plate-head .k{font:600 11px/1.8 var(--mono);color:var(--muted)}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font:700 11px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line2);color:var(--muted)}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--ink);font-weight:500}
+
+pre{margin:0;padding:16px 18px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;
+  font:12.5px/1.6 var(--mono);color:var(--ink);overflow-x:auto}
+pre .ph{color:var(--warn);font-weight:700}
+.codewrap{position:relative}
+.copy{position:absolute;top:10px;right:10px;font:600 11px/1 var(--mono);letter-spacing:.05em;
+  padding:7px 12px;border-radius:6px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);cursor:pointer}
+.copy:hover{background:var(--blue-soft);color:var(--blue);border-color:#BFD4EC}
+.copy:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.copy.done{background:var(--good-soft);color:var(--good);border-color:#BFDCC9}
+
+.quant{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 0}
+.chip{font:600 12px/1 var(--body);padding:7px 11px;border-radius:999px;border:1px solid var(--line);
+  background:var(--panel);color:var(--muted)}
+.chip.good{background:var(--good-soft);border-color:#BFDCC9;color:var(--good)}
+.chip.warn{background:var(--warn-soft);border-color:#E8D9B4;color:var(--warn)}
+
+.note{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--blue);
+  border-radius:12px;padding:14px 18px;margin:16px 0 0;color:var(--muted);font-size:13.5px;max-width:88ch}
+.note b{color:var(--ink)}
+.note code{font:500 12px var(--mono);background:var(--panel);border:1px solid var(--line2);
+  padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+footer{margin:70px 0 50px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:18px}
+footer code{font-family:var(--mono)}
+@media(max-width:720px){.bar nav{display:none}}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <b>Ingren RCA — AWS access setup</b>
+  <nav>
+    <a href="#values">values</a><a href="#step1">1 · policy</a><a href="#step2">2 · role</a>
+    <a href="#step3">3 · attach</a><a href="#step4">4 · share arn</a><a href="#addon">add-on</a>
+  </nav>
+</div></div>
+
+<div class="wrap">
+<header class="hero">
+  <p class="eyebrow">Customer onboarding · AWS access</p>
+  <h1>Grant Ingren read-only access to your AWS account</h1>
+  <p class="lede">Ingren's RCA agent investigates incidents by reading your AWS telemetry: metrics, logs,
+  and resource configuration. To do that it assumes an <b>IAM role in your account</b>. You create the role
+  once, in the AWS console. This page walks through the four steps.</p>
+  <div class="verdict"><span class="dot"></span>Read-only. No permission in this setup can create, modify, or delete anything in your account.</div>
+
+  <div class="tiles">
+    <div class="tile"><div class="n">~10 <small>min</small></div><p>one pass through the AWS console, no CLI needed</p></div>
+    <div class="tile"><div class="n">2</div><p>IAM objects created: one policy, one role</p></div>
+    <div class="tile good"><div class="n">0</div><p>write permissions granted — describe, list, and read only</p></div>
+    <div class="tile"><div class="n">1 <small>click</small></div><p>to revoke: delete the role and access ends immediately</p></div>
+  </div>
+</header>
+
+<section id="values">
+  <p class="sec-eyebrow">Before you start · values used below</p>
+  <h2>Three values appear in the steps</h2>
+  <p class="sec-sub">Placeholders are shown <span style="color:var(--warn);font-weight:700">in orange</span> in the
+  JSON blocks. Replace them before you paste.</p>
+
+  <div class="plate">
+    <table>
+      <thead><tr><th>Value</th><th>What it is</th><th>Where you get it</th></tr></thead>
+      <tbody>
+        <tr><td><code>537124933640</code></td><td>Ingren's AWS account ID. The role trusts this account.</td><td>Fixed. Already filled in below.</td></tr>
+        <tr><td><code>&lt;EXTERNAL_ID&gt;</code></td><td>A secret unique to you. It stops any other AWS customer from assuming your role.</td><td>We send it to you separately, over a private channel. If you don't have it, ask us before you start.</td></tr>
+        <tr><td><code>&lt;YOUR_ACCOUNT_ID&gt;</code></td><td>Your own 12-digit AWS account ID.</td><td>Top-right menu in the AWS console.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="step1">
+  <p class="sec-eyebrow">Step 1 · IAM → Policies → Create policy → JSON</p>
+  <h2>Create the describe policy</h2>
+  <p class="sec-sub">Name it <b><code>ingren-rca-describe</code></b>. It covers the resource-inspection calls
+  that the AWS managed read-only policies in step 3 don't. Paste this JSON in the policy editor's JSON tab.</p>
+
+  <div class="codewrap">
+    <button class="copy" data-target="json-describe">Copy</button>
+<pre id="json-describe">{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "RcaResourceDescribe",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:Describe*",
+                "rds:Describe*",
+                "rds:ListTagsForResource",
+                "dms:Describe*",
+                "elasticloadbalancing:Describe*",
+                "autoscaling:Describe*",
+                "sqs:ListQueues",
+                "sqs:GetQueueAttributes"
+            ],
+            "Resource": "*"
+        }
+    ]
+}</pre>
+  </div>
+  <div class="quant">
+    <span class="chip good">Describe and List actions only</span>
+    <span class="chip">Name: ingren-rca-describe</span>
+  </div>
+</section>
+
+<section id="step2">
+  <p class="sec-eyebrow">Step 2 · IAM → Roles → Create role</p>
+  <h2>Create the role Ingren will assume</h2>
+  <p class="sec-sub">Name it <b><code>ingren-rca-readonly</code></b>. In the wizard, pick trusted entity type
+  <b>AWS account → Another AWS account</b>, enter account ID <code>537124933640</code>, and tick
+  <b>"Require external ID"</b>. Paste your external ID value. The wizard produces exactly this trust policy:</p>
+
+  <div class="codewrap">
+    <button class="copy" data-target="json-trust">Copy</button>
+<pre id="json-trust">{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Principal": {
+                "AWS": "arn:aws:iam::537124933640:root"
+            },
+            "Condition": {
+                "StringEquals": { "sts:ExternalId": "<span class="ph">&lt;EXTERNAL_ID&gt;</span>" }
+            }
+        }
+    ]
+}</pre>
+  </div>
+  <div class="note"><b>Why the external ID matters.</b> The trust policy alone says "Ingren's account may assume
+  this role". The external ID condition adds "…and only when it presents your secret". Together they prevent the
+  <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html">confused-deputy problem</a>.
+  Keep the value private.</div>
+</section>
+
+<section id="step3">
+  <p class="sec-eyebrow">Step 3 · Role → Add permissions → Attach policies</p>
+  <h2>Attach these 4 policies to the role</h2>
+  <p class="sec-sub">Three are AWS managed. The fourth is the one you created in step 1.</p>
+
+  <div class="plate">
+    <table>
+      <thead><tr><th>Policy</th><th>Type</th><th>What it grants</th></tr></thead>
+      <tbody>
+        <tr><td><code>CloudWatchReadOnlyAccess</code></td><td>AWS managed</td><td>Read metrics, alarms, and dashboards</td></tr>
+        <tr><td><code>CloudWatchLogsReadOnlyAccess</code></td><td>AWS managed</td><td>Read log groups and run Logs Insights queries</td></tr>
+        <tr><td><code>ResourceGroupsandTaggingAPIReadOnlyAccess</code></td><td>AWS managed</td><td>Discover resources by tag</td></tr>
+        <tr><td><code>ingren-rca-describe</code></td><td>Customer managed (step 1)</td><td>Inspect EC2, RDS, DMS, load balancer, auto scaling, and SQS configuration</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="step4">
+  <p class="sec-eyebrow">Step 4 · Done — share the ARN</p>
+  <h2>Send us the role ARN</h2>
+  <p class="sec-sub">Open the role and copy its ARN from the summary panel. It looks like this:</p>
+
+  <div class="codewrap">
+    <button class="copy" data-target="arn-sample">Copy</button>
+<pre id="arn-sample">arn:aws:iam::<span class="ph">&lt;YOUR_ACCOUNT_ID&gt;</span>:role/ingren-rca-readonly</pre>
+  </div>
+  <p class="sec-sub" style="margin-top:20px">Reply with the ARN on the same channel where you received your
+  external ID. We confirm access with a read-only test call and tell you when the RCA agent is live.</p>
+</section>
+
+<section id="addon">
+  <p class="sec-eyebrow">Optional add-on</p>
+  <h2>Deeper-logs add-on: CloudTrail, RDS log files, ALB access logs</h2>
+  <p class="sec-sub">Some investigations need three more read paths: <b>CloudTrail event history</b> (who changed
+  what, and when), <b>RDS log file download</b> (database error and slow-query logs), and <b>ALB access logs in S3</b>
+  (per-request traffic during an incident). To enable it,
+  use this JSON for <code>ingren-rca-describe</code> in step 1 instead of the base version — everything else
+  stays the same.</p>
+
+  <div class="codewrap">
+    <button class="copy" data-target="json-extended">Copy</button>
+<pre id="json-extended">{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "RcaResourceDescribe",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:Describe*",
+                "rds:Describe*",
+                "rds:ListTagsForResource",
+                "rds:DownloadDBLogFilePortion",
+                "dms:Describe*",
+                "elasticloadbalancing:Describe*",
+                "autoscaling:Describe*",
+                "sqs:ListQueues",
+                "sqs:GetQueueAttributes",
+                "cloudtrail:LookupEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RcaAlbAccessLogs",
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket", "s3:GetObject"],
+            "Resource": [
+                "arn:aws:s3:::<span class="ph">&lt;ALB_LOGS_BUCKET&gt;</span>",
+                "arn:aws:s3:::<span class="ph">&lt;ALB_LOGS_BUCKET&gt;</span>/*"
+            ]
+        }
+    ]
+}</pre>
+  </div>
+  <div class="note"><b><code>&lt;ALB_LOGS_BUCKET&gt;</code></b> is the S3 bucket where your load balancer writes
+  access logs. Find it under EC2 → Load Balancers → your ALB → Attributes → Access logs. The S3 grant is scoped
+  to that one bucket. Every added action is still read-only.</div>
+  <div class="quant">
+    <span class="chip warn">Adds 3 read paths — still zero write permissions</span>
+    <span class="chip">Replaces the step 1 JSON, not the role</span>
+  </div>
+</section>
+
+<footer>
+  <p style="margin:0 0 8px;max-width:88ch">This is a typical permission request. The exact actions can change
+  based on your architecture. The structure stays the same: an IAM role in your account, an external ID,
+  and read-only policies.</p>
+  Ingren RCA onboarding · AWS access, v1 · questions or a missing external ID: mohit.rawat@ingren.ai ·
+  revoke anytime: delete role <code>ingren-rca-readonly</code>
+</footer>
+</div>
+
+<script>
+document.querySelectorAll('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var text = document.getElementById(btn.dataset.target).textContent;
+    navigator.clipboard.writeText(text).then(function(){
+      btn.textContent = 'Copied';
+      btn.classList.add('done');
+      setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
+    });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ingren RCA — how AWS access works</title>
+<style>
+:root{
+  --bg:#EEF2F6; --surface:#FFFFFF; --panel:#F7FAFC;
+  --ink:#13263A; --muted:#5C7186; --faint:#64788A;
+  --blue:#1E5AA8; --blue-soft:#DCE8F6;
+  --bad:#B3382F; --bad-soft:#F7E4E2; --good:#2E7D4F; --good-soft:#E2F0E7;
+  --warn:#9A6A14; --warn-soft:#F6ECD8;
+  --line:#D7E0E8; --line2:#E7EDF3;
+  --display:"Avenir Next","Avenir","Segoe UI",system-ui,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+a{color:var(--blue)}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--body)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+.bar{position:sticky;top:0;z-index:10;background:rgba(238,242,246,.92);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;align-items:center;gap:18px;padding:10px 28px}
+.bar b{font-family:var(--display);font-weight:600;letter-spacing:.02em}
+.bar nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+.bar nav a{color:var(--muted);text-decoration:none;font:600 11px/1 var(--mono);
+  letter-spacing:.06em;padding:8px 10px;border-radius:6px}
+.bar nav a:hover{background:var(--blue-soft);color:var(--blue)}
+.bar nav a:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+header.hero{padding:46px 0 8px}
+.eyebrow{font:700 11px/1 var(--mono);letter-spacing:.18em;color:var(--blue);margin:0 0 14px;text-transform:uppercase}
+h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,4vw,42px);line-height:1.12;
+  letter-spacing:-.01em;margin:0 0 14px;max-width:22ch}
+.lede{color:var(--muted);max-width:78ch;margin:0 0 6px;font-size:16px}
+.lede b{color:var(--ink)}
+.verdict{display:inline-flex;align-items:center;gap:10px;margin:18px 0 0;padding:10px 16px;
+  border-radius:8px;background:var(--good-soft);border:1px solid #BFDCC9;color:var(--good);
+  font:600 13px/1.4 var(--body)}
+.verdict .dot{width:10px;height:10px;border-radius:50%;background:var(--good);flex:none}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:30px 0 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.tile .n{font-family:var(--display);font-weight:600;font-size:27px;letter-spacing:-.01em}
+.tile .n small{font-size:15px;color:var(--faint);font-weight:500}
+.tile p{margin:4px 0 0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.tile.good .n{color:var(--good)}
+
+section{margin:54px 0;scroll-margin-top:86px}
+.sec-eyebrow{font:700 11px/1 var(--mono);letter-spacing:.18em;color:var(--faint);text-transform:uppercase;margin:0 0 8px}
+h2{font-family:var(--display);font-weight:600;font-size:25px;letter-spacing:-.01em;margin:0 0 10px}
+.sec-sub{color:var(--muted);max-width:82ch;margin:0 0 20px}
+.sec-sub b{color:var(--ink)}
+.sec-sub code, td code{font:500 12px var(--mono);background:var(--panel);border:1px solid var(--line2);
+  padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+.plate{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;
+  box-shadow:0 1px 2px rgba(19,38,58,.04)}
+.plate + .plate{margin-top:14px}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font:700 11px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line2);color:var(--muted)}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--ink);font-weight:500}
+
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:0}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.step .num{font:700 11px/1 var(--mono);letter-spacing:.1em;color:var(--blue);margin:0 0 8px}
+.step .t{font-weight:600;margin:0 0 6px}
+.step p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+
+.note{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--blue);
+  border-radius:12px;padding:14px 18px;margin:16px 0 0;color:var(--muted);font-size:13.5px;max-width:88ch}
+.note b{color:var(--ink)}
+
+footer{margin:70px 0 50px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:18px}
+footer code{font-family:var(--mono)}
+@media(max-width:720px){.bar nav{display:none}}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <b>Ingren RCA — how AWS access works</b>
+  <nav>
+    <a href="#reads">what it reads</a><a href="#how">how access works</a>
+    <a href="#control">your controls</a><a href="#next">what happens next</a>
+  </nav>
+</div></div>
+
+<div class="wrap">
+<header class="hero">
+  <p class="eyebrow">Ingren RCA · access overview</p>
+  <h1>How Ingren connects to your AWS account</h1>
+  <p class="lede">When an incident fires, Ingren's RCA agent investigates it the way an engineer would:
+  it reads your metrics, logs, and resource configuration, and writes up the root cause. To read that
+  telemetry it needs <b>read-only access to your AWS account</b>. This page explains what that access is
+  and how you stay in control of it. It is an overview for an early conversation, not a setup guide.</p>
+  <div class="verdict"><span class="dot"></span>Read-only. The agent cannot create, modify, or delete anything in your account.</div>
+
+  <div class="tiles">
+    <div class="tile good"><div class="n">0</div><p>write permissions — the agent can look, never touch</p></div>
+    <div class="tile"><div class="n">0</div><p>credentials shared — no access keys, no passwords, nothing installed in your account</p></div>
+    <div class="tile"><div class="n">~10 <small>min</small></div><p>of setup on your side when we get there, in the AWS console</p></div>
+    <div class="tile"><div class="n">1 <small>click</small></div><p>to revoke — delete one role and access ends immediately</p></div>
+  </div>
+</header>
+
+<section id="reads">
+  <p class="sec-eyebrow">What the agent reads</p>
+  <h2>Three kinds of telemetry</h2>
+  <p class="sec-sub">The same things an engineer opens during an incident. Nothing else.</p>
+
+  <div class="plate">
+    <table>
+      <thead><tr><th>Telemetry</th><th>Examples</th><th>Why the investigation needs it</th></tr></thead>
+      <tbody>
+        <tr><td>Metrics</td><td>CPU, latency, error rates, queue depth in CloudWatch</td><td>Shows when the incident started and which service moved first</td></tr>
+        <tr><td>Logs</td><td>Application and service logs in CloudWatch Logs</td><td>Shows the actual errors behind the metric spikes</td></tr>
+        <tr><td>Resource configuration</td><td>Instance sizes, database settings, load balancer targets, scaling rules</td><td>Shows whether the environment matches what the team expects</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="how">
+  <p class="sec-eyebrow">How access works</p>
+  <h2>A read-only role in your account, assumed by ours</h2>
+  <p class="sec-sub">This is the standard AWS pattern for giving a vendor scoped access, called a
+  <b>cross-account IAM role</b>. You never hand over credentials, and we never store any.</p>
+
+  <div class="flow">
+    <div class="step"><p class="num">1</p><p class="t">You create a role</p>
+      <p>An IAM role lives in your account, with read-only permissions attached. You create it once in the AWS console. We provide the exact steps.</p></div>
+    <div class="step"><p class="num">2</p><p class="t">The role trusts only Ingren</p>
+      <p>The role can be assumed only by Ingren's AWS account, and only with a secret ID we share with you privately. No one else can use it.</p></div>
+    <div class="step"><p class="num">3</p><p class="t">The agent reads through it</p>
+      <p>During an investigation, the agent assumes the role, reads the telemetry it needs, and writes its findings outside your account.</p></div>
+  </div>
+
+  <div class="note"><b>Why not an API key?</b> A key is a credential that can leak and must be rotated.
+  A role gives out short-lived access that AWS itself controls, and every use of it shows up in your
+  own audit trail (CloudTrail). It is the mechanism AWS recommends for third-party access.</div>
+</section>
+
+<section id="control">
+  <p class="sec-eyebrow">Your controls</p>
+  <h2>You stay in control the whole time</h2>
+
+  <div class="plate">
+    <table>
+      <thead><tr><th>Control</th><th>How it works</th></tr></thead>
+      <tbody>
+        <tr><td>Read-only by construction</td><td>The role's permissions contain only describe, list, and read actions. AWS enforces this, not a promise from us.</td></tr>
+        <tr><td>You see every access</td><td>Each time the agent assumes the role, it is logged in your CloudTrail. You can audit exactly what was read and when.</td></tr>
+        <tr><td>Scoped to what's needed</td><td>The permissions cover the services in your incident path. We don't ask for account-wide admin or blanket access.</td></tr>
+        <tr><td>Revoke in one click</td><td>Delete the role in the IAM console and access ends immediately. No process on our side, nothing to uninstall.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="next">
+  <p class="sec-eyebrow">What happens next</p>
+  <h2>Setup comes after we've mapped your architecture</h2>
+  <p class="sec-sub">Nothing on this page requires action today. The sequence when we start:</p>
+
+  <div class="flow">
+    <div class="step"><p class="num">1</p><p class="t">Architecture walkthrough</p>
+      <p>A short call where we map your services, so the access request covers what your incidents actually touch and nothing more.</p></div>
+    <div class="step"><p class="num">2</p><p class="t">Tailored setup guide</p>
+      <p>We send a step-by-step guide with the exact policies for your stack, plus your private secret ID. About 10 minutes in the console.</p></div>
+    <div class="step"><p class="num">3</p><p class="t">Verify and go live</p>
+      <p>We confirm access with a read-only test call and connect the agent to your alerting. From then on, incidents get investigated automatically.</p></div>
+  </div>
+</section>
+
+<footer>
+  <p style="margin:0 0 8px;max-width:88ch">The exact permissions depend on your architecture and are
+  finalized together in step 1. The structure never changes: a read-only role in your account,
+  a private secret, full audit visibility, revocable by you at any time.</p>
+  Ingren RCA · AWS access overview, v1
+</footer>
+</div>
+
+</body>
+</html>
