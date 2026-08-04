@@ -63,7 +63,7 @@ class FakeConn:
 
 class FakeSlack:
     def __init__(self, parent_text="PARENT ALERT TEXT", name_taken=False,
-                 listable=()):
+                 listable=(), members=()):
         self.posts: list[dict] = []
         self.parent_text = parent_text
         self.parent_fetches = 0
@@ -71,6 +71,7 @@ class FakeSlack:
         self.invited: list[tuple] = []
         self.name_taken = name_taken
         self.listable = list(listable)  # channels conversations_list returns
+        self.members = list(members)    # origin-channel roster
 
     def chat_postMessage(self, **kw):
         self.posts.append(kw)
@@ -90,8 +91,12 @@ class FakeSlack:
         return {"channels": self.listable,
                 "response_metadata": {"next_cursor": ""}}
 
-    def conversations_invite(self, channel, users):
-        self.invited.append((channel, users))
+    def conversations_members(self, **_kw):
+        return {"members": self.members,
+                "response_metadata": {"next_cursor": ""}}
+
+    def conversations_invite(self, channel, users, force=False):
+        self.invited.append((channel, users, force))
 
 
 class FakeSQS:
@@ -128,7 +133,7 @@ def test_new_alert_creates_channel_moves_row_and_starts():
     conn, slack, sfn = FakeConn(), FakeSlack(), FakeSFN()
     handle(conn, slack, sfn, FakeSQS(), CFG, mention())
     assert slack.created == [f"rca-{INCIDENT_ID}"]
-    assert slack.invited == [(INC_CHANNEL, "U-ASKER")]
+    assert slack.invited == [(INC_CHANNEL, "U-ASKER", True)]
     # first post: the alert copy, top-level in the new channel
     copy = slack.posts[0]
     assert copy["channel"] == INC_CHANNEL
@@ -260,9 +265,33 @@ def test_execution_already_exists_is_a_noop_not_an_error():
     assert len(conn.upserted) == 1
 
 
+def test_alert_carries_origin_roster_into_incident_channel():
+    """The incident channel inherits the fix channel's members — one
+    batched invite, force=True so un-invitable ids are skipped."""
+    conn, sfn = FakeConn(), FakeSFN()
+    slack = FakeSlack(members=["U-TEAM1", "U-GUEST1", "U-ASKER"])
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention())
+    ((chan, users, force),) = slack.invited
+    assert chan == INC_CHANNEL
+    assert force is True
+    assert set(users.split(",")) == {"U-TEAM1", "U-GUEST1", "U-ASKER"}
+
+
+def test_failed_member_read_falls_back_to_tagger_alone():
+    class NoMembers(FakeSlack):
+        def conversations_members(self, **_kw):
+            raise SlackApiError("nope", {"error": "missing_scope"})
+
+    conn, sfn = FakeConn(), FakeSFN()
+    slack = NoMembers(members=["U-TEAM1"])
+    handle(conn, slack, sfn, FakeSQS(), CFG, mention())  # must not raise
+    assert slack.invited == [(INC_CHANNEL, "U-ASKER", True)]
+    assert len(sfn.started) == 1
+
+
 def test_failed_invite_never_costs_the_run():
     class NoInvite(FakeSlack):
-        def conversations_invite(self, channel, users):  # noqa: ARG002
+        def conversations_invite(self, channel, users, force=False):  # noqa: ARG002
             raise SlackApiError("nope", {"error": "cant_invite"})
 
     conn, slack, sfn = FakeConn(), NoInvite(), FakeSFN()

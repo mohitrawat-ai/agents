@@ -36,7 +36,8 @@ The re-tag case (a second person tags the bot on an already-claimed
 alert thread) is caught by ORIGIN_LOOKUP against `raw`, and answers with
 a pointer to the incident channel instead of a duplicate run. The rate
 check is skipped when the event_id already has a row: a redelivery must
-converge even inside a full window. The invite of the tagging user is
+converge even inside a full window. The incident channel inherits the
+origin channel's member roster (plus the tagger); the invite is
 best-effort — a failed invite must not cost the run.
 
 Known small hole, accepted: a question asked in the incident channel in
@@ -170,17 +171,46 @@ def ensure_channel(slack: WebClient, incident_id: str) -> str:
             raise RuntimeError(f"channel {name} exists but was not found by list")
 
 
-def invite(slack: WebClient, channel_id: str, user: str | None) -> None:
-    """Best-effort: the tagging user should land in the incident channel,
-    but a failed invite (already in, restricted account) must never cost
-    the run — so nothing here raises."""
-    if not user:
+def invite_members(
+    slack: WebClient, channel_id: str, origin_channel: str, tagger: str | None
+) -> None:
+    """Carry the origin (fix) channel's roster into the incident channel:
+    whoever watches the central channel — team and design-partner guests —
+    lands in the incident's channel automatically (ruled in chat
+    2026-07-25). Best-effort throughout, nothing raises: a failed member
+    read falls back to inviting the tagger alone, and force=True makes
+    Slack skip un-invitable ids (the bot itself, single-channel guests,
+    already-in) instead of failing the batch — so a logged error here can
+    still mean the valid invites went through."""
+    users = {tagger} if tagger else set()
+    try:
+        cursor = None
+        while True:
+            page = slack.conversations_members(
+                channel=origin_channel, limit=200, cursor=cursor
+            )
+            users.update(page["members"])
+            cursor = page.get("response_metadata", {}).get("next_cursor") or None
+            if not cursor:
+                break
+    except SlackApiError as e:
+        print(
+            f"[router] member read of {origin_channel} failed: "
+            f"{e.response['error']} — inviting only the tagger",
+            file=sys.stderr,
+        )
+    if not users:
         return
     try:
-        slack.conversations_invite(channel=channel_id, users=user)
+        slack.conversations_invite(
+            channel=channel_id, users=",".join(sorted(users)), force=True
+        )
     except SlackApiError as e:
-        print(f"[router] invite of {user} failed: {e.response['error']}",
-              file=sys.stderr)
+        print(
+            f"[router] invite to {channel_id} failed or partial: "
+            f"{e.response['error']}",
+            file=sys.stderr,
+        )
 
 
 def start_investigation(sfn, cfg: dict, incident_id: str) -> None:
@@ -333,7 +363,7 @@ def handle(
         # crash mid-setup. Run (or re-run) the setup; duplicates of the
         # posts are invariant 6's accepted loud cheap error.
         incident_channel = ensure_channel(slack, incident_id)
-        invite(slack, incident_channel, event.get("user"))
+        invite_members(slack, incident_channel, channel, event.get("user"))
         copy_ts = slack.chat_postMessage(
             channel=incident_channel, text=text
         )["ts"]
